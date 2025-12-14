@@ -1047,6 +1047,9 @@ static void Cmd_Forfeit_f(gentity_t *ent) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Forfeit is not available during warmup.\n");
 		return;
 	}
+	if (level.num_playing_clients < 2)
+		return;
+
 	if (ent->client != &game.clients[level.sorted_clients[1]]) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Forfeit is only available to the losing player.\n");
 		return;
@@ -1388,6 +1391,9 @@ Cmd_Wave_f
 =================
 */
 static void Cmd_Wave_f(gentity_t *ent) {
+	if (gi.argc() < 2)
+		return;
+
 	int i = atoi(gi.argv(1));
 
 	// no dead or noclip waving
@@ -2562,7 +2568,7 @@ static void Cmd_Boot_f(gentity_t *ent) {
 		return;
 	}
 
-	if (*gi.argv(1) < '0' && *gi.argv(1) > '9') {
+	if (*gi.argv(1) < '0' || *gi.argv(1) > '9') {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Specify the player number to kick.\n");
 		return;
 	}
@@ -3456,6 +3462,11 @@ static void Cmd_Admin_f(gentity_t *ent) {
 			}
 			return;
 		}
+	} else {
+		if (ent->client->sess.admin)
+			gi.LocClient_Print(ent, PRINT_HIGH, "You are an admin.\n");
+		else
+			gi.LocClient_Print(ent, PRINT_HIGH, "Usage: admin <password>\n");
 	}
 	
 	// run command if valid...

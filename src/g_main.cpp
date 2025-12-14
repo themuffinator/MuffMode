@@ -3044,6 +3044,11 @@ bool MQ_Add(gentity_t *ent, const char *mapname) {
 		return false;
 	}
 
+	if (game.mapqueue.size() >= 64) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Map queue is full.\n");
+		return false;
+	}
+
 	// add it!
 	game.mapqueue.push_back(mapname);
 
