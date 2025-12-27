@@ -164,6 +164,7 @@ cvar_t *g_ladder_steps;
 cvar_t *g_lag_compensation;
 cvar_t *g_map_list;
 cvar_t *g_map_list_shuffle;
+cvar_t *mm_map_shuffle_once;
 cvar_t *g_map_pool;
 cvar_t *g_match_lock;
 cvar_t *g_matchstats;
@@ -1006,6 +1007,7 @@ static void InitGame() {
 	g_lag_compensation = gi.cvar("g_lag_compensation", "1", CVAR_NOFLAGS);
 	g_map_list = gi.cvar("g_map_list", "", CVAR_NOFLAGS);
 	g_map_list_shuffle = gi.cvar("g_map_list_shuffle", "1", CVAR_NOFLAGS);
+	mm_map_shuffle_once = gi.cvar("mm_map_shuffle_once", "0", CVAR_NOFLAGS);
 	g_map_pool = gi.cvar("g_map_pool", "", CVAR_NOFLAGS);
 	g_match_lock = gi.cvar("g_match_lock", "0", CVAR_SERVERINFO);
 	g_matchstats = gi.cvar("g_matchstats", "0", CVAR_NOFLAGS);
@@ -1105,6 +1107,9 @@ static void InitGame() {
 		//gi.Com_PrintFmt("exec gt-{}.cfg\n", gt_short_name_upper[g_gametype->integer]);
 		gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[g_gametype->integer]).data());
 	}
+
+	// Shuffle map list once on initialization if enabled
+	MM_ShuffleMapListOnce();
 }
 
 //===================================================================
@@ -2928,6 +2933,30 @@ inline std::vector<std::string> str_split(const std::string_view &str, char by) 
 
 /*
 =================
+MM_ShuffleMapListOnce
+
+Shuffle the map list once at server startup if mm_map_shuffle_once is enabled.
+This provides randomized map order while maintaining predictability during a play session.
+=================
+*/
+static void MM_ShuffleMapListOnce() {
+	if (!mm_map_shuffle_once->integer || !*g_map_list->string)
+		return;
+
+	auto values = str_split(g_map_list->string, ' ');
+	
+	if (values.size() <= 1)
+		return; // Nothing to shuffle
+
+	std::shuffle(values.begin(), values.end(), mt_rand);
+	
+	gi.cvar_forceset("g_map_list", fmt::format("{}", join_strings(values, " ")).data());
+	
+	gi.Com_PrintFmt("Map list shuffled once: {}\n", g_map_list->string);
+}
+
+/*
+=================
 Match_End
 
 An end of match condition has been reached
@@ -2978,8 +3007,8 @@ void Match_End() {
 						BeginIntermission(CreateTargetChangeLevel(level.mapname));
 						return;
 					} else {
-						// [Paril-KEX] re-shuffle if necessary
-						if (g_map_list_shuffle->integer) {
+						// [Paril-KEX] re-shuffle if necessary (skip if mm_map_shuffle_once is enabled)
+						if (g_map_list_shuffle->integer && !mm_map_shuffle_once->integer) {
 							auto values = str_split(g_map_list->string, ' ');
 
 							if (values.size() == 1) {
