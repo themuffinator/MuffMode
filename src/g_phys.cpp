@@ -2,7 +2,9 @@
 // Licensed under the GNU General Public License 2.0.
 // g_phys.c
 
-#include "g_local.h"
+#include <iterator>
+
+#include "g_runthink.h"
 
 /*
 
@@ -93,19 +95,16 @@ Runs thinking code for this frame if necessary
 =============
 */
 bool G_RunThink(gentity_t *ent) {
-	gtime_t thinktime = ent->nextthink;
-	if (thinktime <= 0_ms)
-		return true;
-	if (thinktime > level.time)
-		return true;
-
-	ent->nextthink = 0_ms;
-	if (!ent->think)
-		//gi.Com_Error("nullptr ent->think");
-		return false;	//true;
-	ent->think(ent);
-
-	return false;
+	return G_RunThinkImpl(
+		ent,
+		level.time,
+		[](gentity_t *warn_ent) {
+			const char *name = warn_ent->classname ? warn_ent->classname : "<unknown>";
+			gi.Com_PrintFmt("G_RunThink: null think function for entity \"{}\"\n", name);
+		},
+		[](gentity_t *warn_ent) {
+			G_FreeEntity(warn_ent);
+		});
 }
 
 /*
@@ -134,6 +133,7 @@ The basic solid body movement clip that slides along multiple planes
 */
 void G_FlyMove(gentity_t *ent, float time, contents_t mask) {
 	ent->groundentity = nullptr;
+	ent->groundentity_linkcount = 0;
 
 	touch_list_t touch;
 	PM_StepSlideMove_Generic(ent->s.origin, ent->velocity, time, ent->mins, ent->maxs, touch, false, [&](const vec3_t &start, const vec3_t &mins, const vec3_t &maxs, const vec3_t &end) {
@@ -144,8 +144,13 @@ void G_FlyMove(gentity_t *ent, float time, contents_t mask) {
 		auto &trace = touch.traces[i];
 
 		if (trace.plane.normal[2] > 0.7f) {
-			ent->groundentity = trace.ent;
-			ent->groundentity_linkcount = trace.ent->linkcount;
+			if (trace.ent && trace.ent->inuse) {
+				ent->groundentity = trace.ent;
+				ent->groundentity_linkcount = trace.ent->linkcount;
+			} else {
+				ent->groundentity = nullptr;
+				ent->groundentity_linkcount = 0;
+			}
 		}
 
 		//
@@ -189,6 +194,7 @@ Does not change the entities velocity at all
 static trace_t G_PushEntity(gentity_t *ent, const vec3_t &push) {
 	vec3_t start = ent->s.origin;
 	vec3_t end = start + push;
+	float saved_gravity = ent->gravity;
 
 	trace_t trace = gi.trace(start, ent->mins, ent->maxs, end, ent, G_GetClipMask(ent));
 
@@ -207,8 +213,8 @@ static trace_t G_PushEntity(gentity_t *ent, const vec3_t &push) {
 		}
 	}
 
-	// FIXME - is this needed?
-	ent->gravity = 1.0;
+	if (ent->gravity != saved_gravity)
+		ent->gravity = saved_gravity;
 
 	if (ent->inuse)
 		G_TouchTriggers(ent);
@@ -367,9 +373,30 @@ static bool G_Push(gentity_t *pusher, vec3_t &move, vec3_t &amove) {
 	}
 
 	// FIXME: is there a better way to handle this?
-	//  see if anything we moved has touched a trigger
-	for (p = pushed_p - 1; p >= pushed; p--)
+	//  see if anything we moved has touched a trigger, but avoid
+	//  invoking callbacks multiple times for the same entity in a
+	//  single push.
+	gentity_t *touched[MAX_ENTITIES];
+	uint32_t num_touched = 0;
+
+	for (p = pushed_p - 1; p >= pushed; p--) {
+		bool already_touched = false;
+
+		for (uint32_t i = 0; i < num_touched; i++) {
+			if (touched[i] == p->ent) {
+				already_touched = true;
+				break;
+			}
+		}
+
+		if (already_touched)
+			continue;
+
+		if (num_touched < std::size(touched))
+			touched[num_touched++] = p->ent;
+
 		G_TouchTriggers(p->ent);
+		}
 
 	return true;
 }

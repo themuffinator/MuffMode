@@ -307,24 +307,26 @@ void M_WorldEffects(gentity_t *ent) {
 	}
 }
 
-bool M_droptofloor_generic(vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, bool ceiling, gentity_t *ignore, contents_t mask, bool allow_partial) {
-	vec3_t	end;
-	trace_t trace;
+/*
+=============
+M_droptofloor_generic
 
-	if (gi.trace(origin, mins, maxs, origin, ignore, mask).startsolid) {
-		if (!ceiling)
-			origin[2] += 1;
-		else
-			origin[2] -= 1;
-	}
+Drops an origin along the provided gravity vector until contact is made or a blocking
+volume is found.
+=============
+*/
+bool M_droptofloor_generic(vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, const vec3_t &gravityVector, gentity_t *ignore, contents_t mask, bool allow_partial) {
+	vec3_t	gravity_dir = gravityVector.normalized();
 
-	if (!ceiling) {
-		end = origin;
-		end[2] -= 256;
-	} else {
-		end = origin;
-		end[2] += 256;
-	}
+	if (!gravity_dir)
+		gravity_dir = { 0.0f, 0.0f, -1.0f };
+
+	trace_t trace = gi.trace(origin, mins, maxs, origin, ignore, mask);
+
+	if (trace.startsolid)
+		origin -= gravity_dir;
+
+	vec3_t end = origin + (gravity_dir * 256.0f);
 
 	trace = gi.trace(origin, mins, maxs, end, ignore, mask);
 
@@ -336,11 +338,12 @@ bool M_droptofloor_generic(vec3_t &origin, const vec3_t &mins, const vec3_t &max
 	return true;
 }
 
+
 bool M_droptofloor(gentity_t *ent) {
 	contents_t mask = G_GetClipMask(ent);
 
 	if (!ent->spawnflags.has(SPAWNFLAG_MONSTER_NO_DROP)) {
-		if (!M_droptofloor_generic(ent->s.origin, ent->mins, ent->maxs, ent->gravityVector[2] > 0, ent, mask, true))
+		if (!M_droptofloor_generic(ent->s.origin, ent->mins, ent->maxs, ent->gravityVector, ent, mask, true))
 			return false;
 	} else {
 		if (gi.trace(ent->s.origin, ent->mins, ent->maxs, ent->s.origin, ent, mask).startsolid)
@@ -353,6 +356,7 @@ bool M_droptofloor(gentity_t *ent) {
 
 	return true;
 }
+
 
 void M_SetEffects(gentity_t *ent) {
 	ent->s.effects &= ~(EF_COLOR_SHELL | EF_POWERSCREEN | EF_DOUBLE | EF_QUAD | EF_PENT | EF_FLIES);
@@ -948,12 +952,41 @@ USE(monster_use) (gentity_t *self, gentity_t *other, gentity_t *activator) -> vo
 
 void monster_start_go(gentity_t *self);
 
+/*
+=============
+monster_clear_trigger_spawn_state
+
+Clears trigger-spawn state so the monster behaves like a standard spawn.
+=============
+*/
+static void monster_clear_trigger_spawn_state(gentity_t *self) {
+	self->svflags &= ~SVF_NOCLIENT;
+
+	if (self->spawnflags.has(SPAWNFLAG_MONSTER_TRIGGER_SPAWN))
+		self->spawnflags &= ~SPAWNFLAG_MONSTER_TRIGGER_SPAWN;
+
+	if (self->monsterinfo.aiflags & AI_DO_NOT_COUNT) {
+		self->monsterinfo.aiflags &= ~AI_DO_NOT_COUNT;
+
+		if (!self->spawnflags.has(SPAWNFLAG_MONSTER_DEAD)) {
+			if (g_debug_monster_kills->integer)
+				level.monsters_registered[level.total_monsters] = self;
+			level.total_monsters++;
+		}
+	}
+}
+
+/*
+=============
+monster_triggered_spawn
+=============
+*/
 static THINK(monster_triggered_spawn) (gentity_t *self) -> void {
 	self->s.origin[2] += 1;
 
 	self->solid = SOLID_BBOX;
 	self->movetype = MOVETYPE_STEP;
-	self->svflags &= ~SVF_NOCLIENT;
+	monster_clear_trigger_spawn_state(self);
 	self->air_finished = level.time + 12_sec;
 	gi.linkentity(self);
 
@@ -1620,17 +1653,21 @@ void monster_fire_heatbeam(gentity_t *self, const vec3_t &start, const vec3_t &d
 
 void stationarymonster_start_go(gentity_t *self);
 
+/*
+=============
+stationarymonster_triggered_spawn
+
+Activates a trigger-spawned stationary monster and converts it to standard behavior.
+=============
+*/
 static THINK(stationarymonster_triggered_spawn) (gentity_t *self) -> void {
 	self->solid = SOLID_BBOX;
 	self->movetype = MOVETYPE_NONE;
-	self->svflags &= ~SVF_NOCLIENT;
+	monster_clear_trigger_spawn_state(self);
 	self->air_finished = level.time + 12_sec;
 	gi.linkentity(self);
 
 	KillBox(self, false);
-
-	// FIXME - why doesn't this happen with real monsters?
-	self->spawnflags &= ~SPAWNFLAG_MONSTER_TRIGGER_SPAWN;
 
 	stationarymonster_start_go(self);
 
@@ -1644,6 +1681,13 @@ static THINK(stationarymonster_triggered_spawn) (gentity_t *self) -> void {
 	}
 }
 
+/*
+=============
+stationarymonster_triggered_spawn_use
+
+Entry point when a trigger fires a stationary monster.
+=============
+*/
 static USE(stationarymonster_triggered_spawn_use) (gentity_t *self, gentity_t *other, gentity_t *activator) -> void {
 	// we have a one frame delay here so we don't telefrag the guy who activated us
 	self->think = stationarymonster_triggered_spawn;

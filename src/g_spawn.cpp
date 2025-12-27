@@ -3,6 +3,8 @@
 
 #include "g_local.h"
 
+#include <vector>
+
 struct spawn_t {
 	const char *name;
 	void (*spawn)(gentity_t *ent);
@@ -457,6 +459,27 @@ static const std::initializer_list<spawn_t> spawns = {
 // clang-format on
 
 
+/*
+=============
+G_GetSpawnClassnameConstants
+
+Provides canonical spawn classname pointers.
+=============
+*/
+const std::vector<const char *> &G_GetSpawnClassnameConstants() {
+	static std::vector<const char *> classnames;
+
+	if (!classnames.empty())
+		return classnames;
+
+	classnames.reserve(spawns.size());
+
+	for (const spawn_t &spawn : spawns)
+		classnames.push_back(spawn.name);
+
+	return classnames;
+}
+
 static void SpawnEnt_MapFixes(gentity_t *ent) {
 	if (!Q_strcasecmp(level.mapname, "bunk1")) {
 		if (!Q_strcasecmp(ent->classname, "func_button") && !Q_strcasecmp(ent->model, "*36")) {
@@ -598,7 +621,7 @@ void ED_CallSpawn(gentity_t *ent) {
 		if (GT(GT_BALL)) {
 			ent->s.effects |= EF_COLOR_SHELL;
 			ent->s.renderfx |= RF_SHELL_RED | RF_SHELL_GREEN;
-		} else {
+			} else {
 			G_FreeEntity(ent);
 		}
 		return;
@@ -1225,7 +1248,7 @@ static inline bool G_InhibitEntity(gentity_t *ent) {
 		((skill->integer >= 2) && ent->spawnflags.has(SPAWNFLAG_NOT_HARD));
 }
 
-void setup_shadow_lights();
+void 	setup_shadow_lights();
 
 // [Paril-KEX]
 void PrecacheInventoryItems() {
@@ -1547,9 +1570,19 @@ static void G_LocateSpawnSpots(void) {
 	level.num_spawn_spots = n;
 }
 
+/*
+=============
+	ParseWorldEntityString
+
+Loads the base entity string for the level and optionally overrides it with
+an external .ent file.
+=============
+*/
 static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 	bool	ent_file_exists = false, ent_valid = true;
 	const char *entities = level.entstring.c_str();
+
+	(void)try_q3;
 
 	// load up ent override
 	const char *name = G_Fmt("baseq2/{}/{}.ent", g_entity_override_dir->string[0] ? g_entity_override_dir->string : "maps", mapname).data();
@@ -1568,7 +1601,7 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 			ent_valid = false;
 		}
 		if (ent_valid) {
-			buffer = (char *)gi.TagMalloc(length + 1, '\0');
+			buffer = (char *)gi.TagMalloc(length + 1, TAG_LEVEL);
 			if (length) {
 				read_length = fread(buffer, 1, length, f);
 
@@ -1577,6 +1610,7 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 					ent_valid = false;
 				}
 			}
+			buffer[length] = '\0';
 		}
 		ent_file_exists = true;
 		fclose(f);
@@ -1589,7 +1623,7 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 					//gi.Com_PrintFmt("Entities override: \"{}\"\n", name);
 				}
 			}
-		} else {
+			} else {
 			gi.Com_PrintFmt("{}: Entities override file load error for \"{}\", discarding.\n", __FUNCTION__, name);
 		}
 	}
@@ -1604,7 +1638,7 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 					gi.Com_PrintFmt("{}: Entities override file written to: \"{}\"\n", __FUNCTION__, name);
 				fclose(f);
 			}
-		} else {
+			} else {
 			if (g_verbose->integer)
 				gi.Com_PrintFmt("{}: Entities override file not saved as file already exists: \"{}\"\n", __FUNCTION__, name);
 		}
@@ -1612,6 +1646,13 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 	level.entstring = entities;
 }
 
+/*
+=============
+ParseWorldEntities
+
+Creates runtime entities from the currently loaded entity string.
+=============
+*/
 static void ParseWorldEntities() {
 	gentity_t		*ent = nullptr;
 	int			inhibit = 0;
@@ -1681,6 +1722,45 @@ void ClearWorldEntities() {
 }
 
 /*
+=============
+ResetLevelState
+
+Value-initializes the global level state and reapplies defaults for
+non-trivial members.
+=============
+*/
+static void ResetLevelState() {
+	level = level_locals_t{};
+	level.monsters_registered.fill(nullptr);
+	level.health_bar_entities.fill(nullptr);
+}
+
+/*
+=============
+G_TestCTFSpawnPoints
+
+Ensure Capture the Flag spawn points remain linked and usable after
+entity parsing.
+=============
+*/
+static void G_TestCTFSpawnPoints() {
+	if (!(GTF(GTF_CTF)))
+		return;
+
+	auto ensure_linked = [](const char *classname) {
+		gentity_t *spot = nullptr;
+
+		while ((spot = G_FindByString<&gentity_t::classname>(spot, classname)) != nullptr) {
+			if (!spot->linkcount)
+				gi.linkentity(spot);
+		}
+	};
+
+	ensure_linked("info_player_team_red");
+	ensure_linked("info_player_team_blue");
+}
+
+/*
 ==============
 SpawnEntities
 
@@ -1689,8 +1769,16 @@ parsing textual entity definitions out of an ent file.
 ==============
 */
 void SpawnEntities(const char *mapname, const char *entities, const char *spawnpoint) {
+	std::string new_entstring = entities ? entities : "";
 	bool		ent_file_exists = false, ent_valid = true;
 	//const char	*entities = level.entstring.c_str();
+
+	Q_strlcpy(level.mapname, mapname, sizeof(level.mapname));
+	// Paril: fixes a bug where autosaves will start you at
+	// the wrong spawnpoint if they happen to be non-empty
+	// (mine2 -> mine3)
+	if (!game.autosaved)
+		Q_strlcpy(game.spawnpoint, spawnpoint, sizeof(game.spawnpoint));
 //#if 0
 	// load up ent override
 	//const char *name = G_Fmt("baseq2/maps/{}.ent", mapname).data();
@@ -1710,7 +1798,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 			ent_valid = false;
 		}
 		if (ent_valid) {
-			buffer = (char *)gi.TagMalloc(length + 1, '\0');
+			buffer = (char *)gi.TagMalloc(length + 1, TAG_LEVEL);
 			if (length) {
 				read_length = fread(buffer, 1, length, f);
 
@@ -1719,6 +1807,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 					ent_valid = false;
 				}
 			}
+			buffer[length] = '\0';
 		}
 		ent_file_exists = true;
 		fclose(f);
@@ -1732,7 +1821,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 						gi.Com_PrintFmt("{}: Entities override file verified and loaded: \"{}\"\n", __FUNCTION__, name);
 				}
 			}
-		} else {
+			} else {
 			gi.Com_PrintFmt("{}: Entities override file load error for \"{}\", discarding.\n", __FUNCTION__, name);
 		}
 	}
@@ -1747,11 +1836,11 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 					gi.Com_PrintFmt("{}: Entities override file written to: \"{}\"\n", __FUNCTION__, name);
 				fclose(f);
 			}
-		} else {
+			} else {
 			//gi.Com_PrintFmt("{}: Entities override file not saved as file already exists: \"{}\"\n", __FUNCTION__, name);
 		}
 	}
-	level.entstring = entities;
+	std::string incoming_entstring = entities ? std::string(entities) : std::string();
 //#endif
 	//ParseWorldEntityString(mapname, RS(RS_Q3A));
 
@@ -1769,17 +1858,19 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 	gi.FreeTags(TAG_LEVEL);
 
 	memset(&level, 0, sizeof(level));
+	level.steam_effect_next_id = 0;
 	memset(g_entities, 0, game.maxentities * sizeof(g_entities[0]));
+	globals.num_entities = game.maxclients + 1;
+	level.entstring = incoming_entstring;
+	entities = level.entstring.c_str();
 	
 	// all other flags are not important atm
-	globals.server_flags &= SERVER_FLAG_LOADING;
+	globals.server_flags |= SERVER_FLAG_LOADING;
 
-	Q_strlcpy(level.mapname, mapname, sizeof(level.mapname));
-	// Paril: fixes a bug where autosaves will start you at
-	// the wrong spawnpoint if they happen to be non-empty
-	// (mine2 -> mine3)
-	if (!game.autosaved)
-		Q_strlcpy(game.spawnpoint, spawnpoint, sizeof(game.spawnpoint));
+	level.entstring = new_entstring;
+	ParseWorldEntityString(mapname, RS(RS_Q3A));
+
+	G_SaveLevelEntstring();
 
 	level.is_n64 = strncmp(level.mapname, "q64/", 4) == 0;
 
@@ -1798,57 +1889,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 	// reserve some spots for dead player bodies for coop / deathmatch
 	InitBodyQue();
 
-	gentity_t *ent = nullptr;
-	int			inhibit = 0;
-	const char *com_token;
-	//const char *entities = level.entstring.c_str();
-
-	// parse entities
-	while (1) {
-		// parse the opening brace
-		com_token = COM_Parse(&entities);
-		if (!entities)
-			break;
-		if (com_token[0] != '{')
-			gi.Com_ErrorFmt("{}: Found \"{}\" when expecting {{ in entity string.\n", __FUNCTION__, com_token);
-
-		if (!ent)
-			ent = g_entities;
-		else
-			ent = G_Spawn();
-		entities = ED_ParseEntity(entities, ent);
-
-		// nasty hacks time!
-		if (!strcmp(level.mapname, "bunk1")) {
-			if (!strcmp(ent->classname, "func_button") && !Q_strcasecmp(ent->model, "*36")) {
-				ent->wait = -1;
-			}
-		}
-
-		// remove things (except the world) from different skill levels or deathmatch
-		if (ent != g_entities) {
-			if (G_InhibitEntity(ent)) {
-				G_FreeEntity(ent);
-				inhibit++;
-				continue;
-			}
-
-			ent->spawnflags &= ~SPAWNFLAG_EDITOR_MASK;
-		}
-
-		if (!ent)
-			gi.Com_ErrorFmt("{}: Invalid or empty entity string.", __FUNCTION__);
-
-		// do this before calling the spawn function so it can be overridden.
-		ent->gravityVector = { 0.0, 0.0, -1.0 };
-
-		ED_CallSpawn(ent);
-
-		ent->s.renderfx |= RF_IR_VISIBLE;
-	}
-
-	if (inhibit && g_verbose->integer)
-		gi.Com_PrintFmt("{} entities inhibited.\n", inhibit);
+	ParseWorldEntities();
 
 	// precache start_items
 	PrecacheStartItems();
@@ -1860,6 +1901,8 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 
 	QuadHog_SetupSpawn(5_sec);
 	Tech_SetupSpawn();
+
+	G_TestCTFSpawnPoints();
 
 	if (deathmatch->integer) {
 		if (g_dm_random_items->integer)
@@ -1873,7 +1916,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 		game.item_inhibit_wp = 0;
 	} else {
 		InitHintPaths(); // if there aren't hintpaths on this map, enable quick aborts
-	}
+}
 
 	G_LocateSpawnSpots();
 
@@ -1938,8 +1981,9 @@ static void G_InitStatusbar() {
 		// top of screen coop respawn display
 		sb.ifstat(STAT_COOP_RESPAWN).xv(0).yt(0).loc_stat_cstring2(STAT_COOP_RESPAWN).endifstat();
 		
-		// coop lives
-		if (g_coop_enable_lives->integer && g_coop_num_lives->integer > 0)
+		// coop & horde lives
+const bool limited_lives = (g_coop_enable_lives->integer && g_coop_num_lives->integer > 0) || Horde_LivesEnabled();
+		if (limited_lives)
 			sb.ifstat(STAT_LIVES).xr(-16).yt(y = 2).lives_num(STAT_LIVES).xr(0).yt(y += text_adj).loc_rstring("$g_lives").endifstat();
 
 		// total monsters
@@ -1974,7 +2018,7 @@ static void G_InitStatusbar() {
 		sb.ifstat(STAT_HEALTH_BARS).yt(24).health_bars().endifstat();
 
 		sb.story();
-	} else {
+		} else {
 		if (Teams()) {
 			// flag carrier indicator
 			if (GTF(GTF_CTF))
@@ -2016,7 +2060,7 @@ static void G_InitStatusbar() {
 
 void GT_SetLongName(void) {
 	const char *s;
-	if (deathmatch->integer) {
+		if (deathmatch->integer) {
 		if (GT(GT_CTF)) {
 			if (g_instagib->integer) {
 				s = "Insta-CTF";
@@ -2028,7 +2072,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest CTF";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog CTF";
-			} else {
+				} else {
 				s = gt_long_name[GT_CTF];
 			}
 		} else if (GT(GT_FREEZE)) {
@@ -2042,7 +2086,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest Freeze";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog Freeze";
-			} else {
+				} else {
 				s = gt_long_name[GT_FREEZE];
 			}
 		} else if (GT(GT_CA)) {
@@ -2056,7 +2100,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest CA";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog CA";
-			} else {
+				} else {
 				s = gt_long_name[GT_CA];
 			}
 		} else if (GT(GT_RR)) {
@@ -2070,7 +2114,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest RR";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog RR";
-			} else {
+				} else {
 				s = gt_long_name[GT_RR];
 			}
 		} else if (GT(GT_STRIKE)) {
@@ -2084,7 +2128,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest Strike";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog Strike";
-			} else {
+				} else {
 				s = gt_long_name[GT_STRIKE];
 			}
 		} else if (GT(GT_TDM)) {
@@ -2098,7 +2142,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest TDM";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog TDM";
-			} else {
+				} else {
 				s = gt_long_name[GT_TDM];
 			}
 		} else if (GT(GT_DUEL)) {
@@ -2112,7 +2156,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest Duel";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog Duel";
-			} else {
+				} else {
 				s = gt_long_name[GT_DUEL];
 			}
 		} else if (GT(GT_HORDE)) {
@@ -2126,7 +2170,7 @@ void GT_SetLongName(void) {
 				s = "NadeFest Horde";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog Horde";
-			} else {
+				} else {
 				s = gt_long_name[GT_HORDE];
 			}
 		} else if (GT(GT_BALL)) {
@@ -2140,10 +2184,10 @@ void GT_SetLongName(void) {
 				s = "NadeFest ProBall";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog ProBall";
-			} else {
+				} else {
 				s = gt_long_name[GT_BALL];
 			}
-		} else if (deathmatch->integer) {
+		} else 	if (deathmatch->integer) {
 			if (g_instagib->integer) {
 				s = "InstaGib";
 			} else if (g_vampiric_damage->integer) {
@@ -2154,16 +2198,16 @@ void GT_SetLongName(void) {
 				s = "NadeFest";
 			} else if (g_quadhog->integer) {
 				s = "Quad Hog";
-			} else {
+				} else {
 				s = gt_long_name[GT_FFA];
 			}
-		} else {
+			} else {
 			s = "Unknown Gametype";
 		}
-	} else {
+		} else {
 		if (coop->integer) {
 			s = "Co-op";
-		} else {
+			} else {
 			s = "Single Player";
 		}
 	}
@@ -2255,7 +2299,7 @@ void SP_worldspawn(gentity_t *ent) {
 
 	if (st.music && st.music[0]) {
 		gi.configstring(CS_CDTRACK, st.music);
-	} else {
+		} else {
 		gi.configstring(CS_CDTRACK, G_Fmt("{}", ent->sounds).data());
 	}
 
@@ -2314,7 +2358,7 @@ void SP_worldspawn(gentity_t *ent) {
 	if (!st.gravity) {
 		level.gravity = 800.f;
 		gi.cvar_set("g_gravity", "800");
-	} else {
+		} else {
 		level.gravity = atof(st.gravity);
 		gi.cvar_set("g_gravity", st.gravity);
 	}
@@ -2432,4 +2476,6 @@ void SP_worldspawn(gentity_t *ent) {
 		gi.configstring(CONFIG_COOP_RESPAWN_STRING + 3, "$g_coop_respawn_waiting");
 		gi.configstring(CONFIG_COOP_RESPAWN_STRING + 4, "$g_coop_respawn_no_lives");
 	}
+
+	globals.server_flags &= ~SERVER_FLAG_LOADING;
 }

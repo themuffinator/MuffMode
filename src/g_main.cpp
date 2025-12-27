@@ -4,6 +4,11 @@
 #include "g_local.h"
 #include "bots/bot_includes.h"
 #include "monsters/m_player.h"	// match starts
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <string>
+#include <unordered_set>
 
 CHECK_GCLIENT_INTEGRITY;
 CHECK_ENTITY_INTEGRITY;
@@ -33,6 +38,8 @@ gentity_t *g_entities;
 
 cvar_t *hostname;
 
+static std::string saved_level_entstring;
+
 cvar_t *deathmatch;
 cvar_t *ctf;
 cvar_t *teamplay;
@@ -61,6 +68,8 @@ static cvar_t *maxclients;
 static cvar_t *maxentities;
 cvar_t *maxplayers;
 cvar_t *minplayers;
+
+static std::unordered_set<std::string> g_admin_social_ids;
 
 cvar_t *ai_allow_dm_spawn;
 cvar_t *ai_damage_scale;
@@ -98,6 +107,7 @@ cvar_t *g_coop_health_scaling;
 cvar_t *g_coop_instanced_items;
 cvar_t *g_coop_num_lives;
 cvar_t *g_coop_player_collision;
+cvar_t *g_horde_num_lives;
 cvar_t *g_coop_squad_respawn;
 cvar_t *g_corpse_sink_time;
 cvar_t *g_damage_scale;
@@ -116,6 +126,7 @@ cvar_t *g_dm_force_join;
 cvar_t *g_dm_force_respawn;
 cvar_t *g_dm_force_respawn_time;
 cvar_t *g_dm_holdable_adrenaline;
+cvar_t *g_dm_holdable_doppel_max;
 cvar_t *g_dm_instant_items;
 cvar_t *g_dm_intermission_shots;
 cvar_t *g_dm_item_respawn_rate;
@@ -528,6 +539,13 @@ static void Horde_Init() {
 	*/
 }
 
+/*
+=============
+Horde_AllMonstersDead
+
+Returns true when no live monsters remain in the level.
+=============
+*/
 static bool Horde_AllMonstersDead() {
 	for (size_t i = 0; i < globals.max_entities; i++) {
 		if (!g_entities[i].inuse)
@@ -541,10 +559,56 @@ static bool Horde_AllMonstersDead() {
 	return true;
 }
 
+/*
+=============
+Horde_LivesEnabled
+
+Returns true when Horde is configured to use limited lives.
+=============
+*/
+bool Horde_LivesEnabled() {
+	return GT(GT_HORDE) && g_horde_num_lives->integer > 0;
+}
+
+/*
+=============
+Horde_NoLivesRemain
+
+Returns true when no active players are present or when every playing client is out of lives or eliminated.
+=============
+*/
+bool Horde_NoLivesRemain(const std::vector<player_life_state_t> &states) {
+	for (const auto &state : states) {
+		if (!state.playing)
+			continue;
+
+		if (state.health > 0)
+			return false;
+
+		if (!state.eliminated && state.lives > 0)
+			return false;
+	}
+
+	return true;
+}
 // =================================================
 
 
+/*
+=============
+G_LoadMOTD
+
+Loads the server message of the day text into persistent memory.
+=============
+*/
 void G_LoadMOTD() {
+	if (game.motd_buffer) {
+		gi.TagFree(game.motd_buffer);
+		game.motd_buffer = nullptr;
+	}
+
+	game.motd.clear();
+
 	// load up ent override
 	const char *name = G_Fmt("baseq2/{}", g_motd_filename->string[0] ? g_motd_filename->string : "motd.txt").data();
 	FILE *f = fopen(name, "rb");
@@ -563,7 +627,7 @@ void G_LoadMOTD() {
 			valid = false;
 		}
 		if (valid) {
-			buffer = (char *)gi.TagMalloc(length + 1, '\0');
+			buffer = (char *)gi.TagMalloc(length + 1, TAG_GAME);
 			if (length) {
 				read_length = fread(buffer, 1, length, f);
 
@@ -572,19 +636,28 @@ void G_LoadMOTD() {
 					valid = false;
 				}
 			}
+			buffer[length] = '\0';
 		}
 		fclose(f);
-		
+
 		if (valid) {
-			game.motd = (const char *)buffer;
+			game.motd_buffer = buffer;
+			game.motd.assign(buffer, length);
 			game.motd_mod_count++;
 			if (g_verbose->integer)
 				gi.Com_PrintFmt("{}: MotD file verified and loaded: \"{}\"\n", __FUNCTION__, name);
 		} else {
 			gi.Com_PrintFmt("{}: MotD file load error for \"{}\", discarding.\n", __FUNCTION__, name);
+			if (buffer) {
+				gi.TagFree(buffer);
+				buffer = nullptr;
+			}
+			game.motd_buffer = nullptr;
+			game.motd.clear();
 		}
 	}
 }
+
 
 int check_ruleset = -1;
 static void CheckRuleset() {
@@ -606,37 +679,142 @@ static void InitGametype() {
 	bool force_dm = false;
 
 	if (g_gametype->integer < 0 || g_gametype->integer >= GT_NUM_GAMETYPES)
-		gi.cvar_forceset("g_gametype", G_Fmt("{}", clamp(g_gametype->integer, (int)GT_FIRST, (int)GT_LAST)).data());
-	
+	gi.cvar_forceset("g_gametype", G_Fmt("{}", clamp(g_gametype->integer, (int)GT_FIRST, (int)GT_LAST)).data());
+
 	if (ctf->integer) {
-		force_dm = true;
-		// force coop off
-		if (coop->integer)
-			gi.cvar_set(COOP, "0");
-		// force tdm off
-		if (teamplay->integer)
-			gi.cvar_set("teamplay", "0");
+	force_dm = true;
+	// force coop off
+	if (coop->integer)
+	gi.cvar_set(COOP, "0");
+	// force tdm off
+	if (teamplay->integer)
+	gi.cvar_set("teamplay", "0");
 	}
 	if (teamplay->integer) {
-		force_dm = true;
-		// force coop off
-		if (coop->integer)
-			gi.cvar_set(COOP, "0");
+	force_dm = true;
+	// force coop off
+	if (coop->integer)
+	gi.cvar_set(COOP, "0");
 	}
 
 	if (force_dm && !deathmatch->integer) {
-		gi.Com_Print("Forcing deathmatch.\n");
-		gi.cvar_forceset("deathmatch", "1");
+	gi.Com_Print("Forcing deathmatch.\n");
+	gi.cvar_forceset("deathmatch", "1");
 	}
 
 	// force even maxplayers value during teamplay
 	if (Teams()) {
-		int pmax = maxplayers->integer;
+	int pmax = maxplayers->integer;
 
-		if (pmax != floor(pmax / 2))
-			gi.cvar_set("maxplayers", G_Fmt("{}", floor(pmax / 2) * 2).data());
+	if (pmax != floor(pmax / 2))
+	gi.cvar_set("maxplayers", G_Fmt("{}", floor(pmax / 2) * 2).data());
 	}
-}
+	}
+
+/*
+=============
+G_Admins_NormalizeId
+
+Converts a social ID to lowercase for comparison.
+=============
+*/
+static std::string G_Admins_NormalizeId(const std::string &input) {
+	std::string normalized;
+	normalized.reserve(input.size());
+
+	for (char ch : input)
+	normalized.push_back((char)std::tolower((uint8_t)ch));
+
+	return normalized;
+	}
+
+/*
+=============
+G_Admins_TrimLine
+
+Strips comments and whitespace from a config line.
+=============
+*/
+static std::string G_Admins_TrimLine(const std::string &line) {
+	std::string trimmed = line;
+
+	size_t comment = trimmed.find_first_of("#;");
+	if (comment != std::string::npos)
+	trimmed = trimmed.substr(0, comment);
+
+	size_t start = trimmed.find_first_not_of(" \t\r\n");
+	if (start == std::string::npos)
+	return {};
+
+	size_t end = trimmed.find_last_not_of(" \t\r\n");
+	return trimmed.substr(start, end - start + 1);
+	}
+
+/*
+=============
+G_IsAdminSocialId
+
+Checks whether the provided social ID is in the admin list.
+=============
+*/
+bool G_IsAdminSocialId(const char *social_id) {
+	if (!social_id || !*social_id)
+	return false;
+
+	std::string normalized = G_Admins_NormalizeId(social_id);
+	return g_admin_social_ids.find(normalized) != g_admin_social_ids.end();
+	}
+
+/*
+=============
+G_LoadAdminList
+
+Loads admins from the admins.txt configuration file.
+=============
+*/
+static void G_LoadAdminList() {
+	g_admin_social_ids.clear();
+
+	const char *filename = "admins.txt";
+	std::ifstream file(filename);
+
+	if (!file.is_open()) {
+	gi.Com_PrintFmt("G_LoadAdminList: {} not found, skipping admin preload.\n", filename);
+	return;
+	}
+
+	size_t line_number = 0;
+	std::string line;
+
+	while (std::getline(file, line)) {
+	++line_number;
+
+	std::string trimmed = G_Admins_TrimLine(line);
+	if (trimmed.empty())
+	continue;
+
+	if (trimmed.size() >= MAX_INFO_VALUE) {
+	gi.Com_PrintFmt("G_LoadAdminList: line {} exceeds maximum length, ignoring.\n", line_number);
+	continue;
+	}
+
+	if (trimmed.find_first_of(" \t") != std::string::npos) {
+	gi.Com_PrintFmt("G_LoadAdminList: unexpected whitespace on line {}, ignoring.\n", line_number);
+	continue;
+	}
+
+	std::string normalized = G_Admins_NormalizeId(trimmed);
+
+	if (normalized.empty()) {
+	gi.Com_PrintFmt("G_LoadAdminList: invalid entry on line {}, ignoring.\n", line_number);
+	continue;
+	}
+
+	g_admin_social_ids.insert(normalized);
+	}
+
+	gi.Com_PrintFmt("G_LoadAdminList: loaded {} admin entr{}.\n", g_admin_social_ids.size(), g_admin_social_ids.size() == 1 ? "y" : "ies");
+	}
 
 void ChangeGametype(gametype_t gt) {
 	switch (gt) {
@@ -670,6 +848,51 @@ int gt_ctf = 0;
 int gt_g_gametype = 0;
 bool gt_teams_on = false;
 gametype_t gt_check = GT_NONE;
+static char *gt_saved_entstring = nullptr;
+
+/*
+=============
+G_SaveGametypeEntityString
+
+Make a copy of the current level entity string so the level can be
+rebuilt without a full map load.
+=============
+*/
+static bool G_SaveGametypeEntityString() {
+	if (gt_saved_entstring) {
+		gi.TagFree(gt_saved_entstring);
+		gt_saved_entstring = nullptr;
+	}
+
+	if (level.entstring.empty())
+		return false;
+
+	size_t length = level.entstring.length() + 1;
+	gt_saved_entstring = (char *)gi.TagMalloc(length, TAG_GAME);
+	if (!gt_saved_entstring)
+		return false;
+
+	Q_strlcpy(gt_saved_entstring, level.entstring.c_str(), length);
+	return true;
+}
+
+/*
+=============
+G_LoadGametypeEntityString
+
+Reload the saved entity string and clear its cached copy.
+=============
+*/
+static bool G_LoadGametypeEntityString() {
+	if (!gt_saved_entstring)
+		return false;
+
+	SpawnEntities(level.mapname, gt_saved_entstring, game.spawnpoint);
+	gi.TagFree(gt_saved_entstring);
+	gt_saved_entstring = nullptr;
+	return true;
+}
+
 void GT_Changes() {
 	if (!deathmatch->integer)
 		return;
@@ -750,7 +973,8 @@ void GT_Changes() {
 		return;
 
 	//gi.Com_PrintFmt("GAMETYPE = {}\n", (int)gt);
-	
+	bool saved_entstring = G_SaveGametypeEntityString();
+
 	if (gt_teams_on != Teams()) {
 		team_reset = true;
 		gt_teams_on = Teams();
@@ -790,14 +1014,55 @@ void GT_Changes() {
 		gt_check = (gametype_t)g_gametype->integer;
 	} else return;
 
-	//TODO: save ent string so we can simply reload it and Match_Reset
-	//gi.AddCommandString("map_restart");
+        if (saved_entstring && G_LoadGametypeEntityString()) {
+                Match_Reset();
+        } else {
+                if (gt_saved_entstring) {
+                        gi.TagFree(gt_saved_entstring);
+                        gt_saved_entstring = nullptr;
+                }
+                gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
+        }
 
-	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
+        GT_PrecacheAssets();
+        GT_SetLongName();
+        gi.LocBroadcast_Print(PRINT_CENTER, "{}", level.gametype_name);
+}
 
-	GT_PrecacheAssets();
-	GT_SetLongName();
-	gi.LocBroadcast_Print(PRINT_CENTER, "{}", level.gametype_name);
+/*
+=============
+G_SaveLevelEntstring
+
+Preserve the currently loaded entity string so it can be reused when rebuilding the level without a full map reload.
+=============
+*/
+void G_SaveLevelEntstring() {
+	if (!level.entstring.empty())
+		saved_level_entstring = level.entstring;
+}
+
+/*
+=============
+G_ResetLevelFromSavedEntstring
+
+Rebuild the level using the cached entity string if available, avoiding a full map reload. Returns true when the reset completed using the cached data.
+=============
+*/
+bool G_ResetLevelFromSavedEntstring() {
+	const char *entities = nullptr;
+
+	if (!saved_level_entstring.empty())
+		entities = saved_level_entstring.c_str();
+	else if (!level.entstring.empty())
+		entities = level.entstring.c_str();
+
+	if (!entities)
+		return false;
+
+	ClearWorldEntities();
+	SpawnEntities(level.mapname, entities, nullptr);
+
+	return true;
 }
 
 /*
@@ -877,10 +1142,11 @@ static void InitGame() {
 
 	// [Paril-KEX]
 	g_coop_player_collision = gi.cvar("g_coop_player_collision", "0", CVAR_LATCH);
-	g_coop_squad_respawn = gi.cvar("g_coop_squad_respawn", "1", CVAR_LATCH);
-	g_coop_enable_lives = gi.cvar("g_coop_enable_lives", "0", CVAR_LATCH);
-	g_coop_num_lives = gi.cvar("g_coop_num_lives", "2", CVAR_LATCH);
-	g_coop_instanced_items = gi.cvar("g_coop_instanced_items", "1", CVAR_LATCH);
+g_coop_squad_respawn = gi.cvar("g_coop_squad_respawn", "1", CVAR_LATCH);
+g_coop_enable_lives = gi.cvar("g_coop_enable_lives", "0", CVAR_LATCH);
+g_coop_num_lives = gi.cvar("g_coop_num_lives", "2", CVAR_LATCH);
+g_horde_num_lives = gi.cvar("g_horde_num_lives", "0", CVAR_SERVERINFO | CVAR_LATCH);
+g_coop_instanced_items = gi.cvar("g_coop_instanced_items", "1", CVAR_LATCH);
 	g_allow_grapple = gi.cvar("g_allow_grapple", "auto", CVAR_NOFLAGS);
 	g_allow_kill = gi.cvar("g_allow_kill", "1", CVAR_NOFLAGS);
 	g_grapple_offhand = gi.cvar("g_grapple_offhand", "0", CVAR_NOFLAGS);
@@ -967,13 +1233,14 @@ static void InitGame() {
 	g_dm_do_readyup = gi.cvar("g_dm_do_readyup", "0", CVAR_NOFLAGS);
 	g_dm_do_warmup = gi.cvar("g_dm_do_warmup", "1", CVAR_NOFLAGS);
 	g_dm_exec_level_cfg = gi.cvar("g_dm_exec_level_cfg", "0", CVAR_NOFLAGS);
-	g_dm_force_join = gi.cvar("g_dm_force_join", "0", CVAR_NOFLAGS);
-	g_dm_force_respawn = gi.cvar("g_dm_force_respawn", "1", CVAR_NOFLAGS);
-	g_dm_force_respawn_time = gi.cvar("g_dm_force_respawn_time", "3", CVAR_NOFLAGS);
-	g_dm_holdable_adrenaline = gi.cvar("g_dm_holdable_adrenaline", "1", CVAR_NOFLAGS);
-	g_dm_instant_items = gi.cvar("g_dm_instant_items", "1", CVAR_NOFLAGS);
-	g_dm_intermission_shots = gi.cvar("g_dm_intermission_shots", "0", CVAR_NOFLAGS);
-	g_dm_item_respawn_rate = gi.cvar("g_dm_item_respawn_rate", "1.0", CVAR_NOFLAGS);
+g_dm_force_join = gi.cvar("g_dm_force_join", "0", CVAR_NOFLAGS);
+g_dm_force_respawn = gi.cvar("g_dm_force_respawn", "1", CVAR_NOFLAGS);
+g_dm_force_respawn_time = gi.cvar("g_dm_force_respawn_time", "3", CVAR_NOFLAGS);
+g_dm_holdable_adrenaline = gi.cvar("g_dm_holdable_adrenaline", "1", CVAR_NOFLAGS);
+g_dm_holdable_doppel_max = gi.cvar("g_dm_holdable_doppel_max", "0", CVAR_NOFLAGS);
+g_dm_instant_items = gi.cvar("g_dm_instant_items", "1", CVAR_NOFLAGS);
+g_dm_intermission_shots = gi.cvar("g_dm_intermission_shots", "0", CVAR_NOFLAGS);
+g_dm_item_respawn_rate = gi.cvar("g_dm_item_respawn_rate", "1.0", CVAR_NOFLAGS);
 	g_dm_no_fall_damage = gi.cvar("g_dm_no_fall_damage", "0", CVAR_NOFLAGS);
 	g_dm_no_quad_drop = gi.cvar("g_dm_no_quad_drop", "0", CVAR_NOFLAGS);
 	g_dm_no_self_damage = gi.cvar("g_dm_no_self_damage", "0", CVAR_NOFLAGS);
@@ -1043,6 +1310,8 @@ static void InitGame() {
 	g_weapon_projection = gi.cvar("g_weapon_projection", "0", CVAR_NOFLAGS);
 	g_weapon_respawn_time = gi.cvar("g_weapon_respawn_time", "30", CVAR_NOFLAGS);
 
+	G_LoadAdminList();
+
 	bot_name_prefix = gi.cvar("bot_name_prefix", "B|", CVAR_NOFLAGS);
 
 	// ruleset
@@ -1053,6 +1322,8 @@ static void InitGame() {
 
 	game = {};
 
+	const int32_t clamped_maxclients = std::clamp<int32_t>(maxclients->integer, 1, static_cast<int32_t>(MAX_CLIENTS));
+
 	// initialize all entities for this game
 	game.maxentities = maxentities->integer;
 	g_entities = (gentity_t *)gi.TagMalloc(game.maxentities * sizeof(g_entities[0]), TAG_GAME);
@@ -1060,13 +1331,13 @@ static void InitGame() {
 	globals.max_entities = game.maxentities;
 
 	// initialize all clients for this game
-	game.maxclients = maxclients->integer;
-	game.clients = (gclient_t *)gi.TagMalloc(game.maxclients * sizeof(game.clients[0]), TAG_GAME);
-	globals.num_entities = game.maxclients + 1;
+	game.maxclients = clamped_maxclients;
+	game.clients = (gclient_t *)gi.TagMalloc(clamped_maxclients * sizeof(game.clients[0]), TAG_GAME);
+	globals.num_entities = clamped_maxclients + 1;
 
 	// how far back we should support lag origins for
 	game.max_lag_origins = 20 * (0.1f / gi.frame_time_s);
-	game.lag_origins = (vec3_t *)gi.TagMalloc(game.maxclients * sizeof(vec3_t) * game.max_lag_origins, TAG_GAME);
+	game.lag_origins = (vec3_t *)gi.TagMalloc(clamped_maxclients * sizeof(vec3_t) * game.max_lag_origins, TAG_GAME);
 
 	level.start_time = level.time;
 
@@ -1455,6 +1726,8 @@ void Round_End() {
 	level.round_state = roundst_t::ROUND_ENDED;
 	level.round_state_timer = level.time + 3_sec;
 	level.horde_all_spawned = false;
+
+	ProcessBalanceQueue();
 }
 
 /*
@@ -1842,9 +2115,21 @@ static void CheckDMRoundState(void) {
 				Round_End();
 				return;
 			}
-			break;
-		}
+break;
+}
 		case GT_HORDE:
+			if (Horde_LivesEnabled()) {
+				std::vector<player_life_state_t> life_states;
+
+				for (auto ec : active_clients())
+					life_states.push_back({ ClientIsPlaying(ec->client), ec->client->eliminated, ec->health, ec->client->pers.lives });
+
+				if (Horde_NoLivesRemain(life_states)) {
+					gi.LocBroadcast_Print(PRINT_CENTER, "No lives remaining!\n");
+					QueueIntermission("OUT OF LIVES", true, false);
+					return;
+				}
+			}
 			Horde_RunSpawning();
 			//if (level.horde_all_spawned && Horde_AllMonstersDead()) {
 			if (level.horde_all_spawned && !(level.total_monsters - level.killed_monsters)) {
@@ -2246,8 +2531,7 @@ void FindIntermissionPoint(void) {
 			if (target) {
 				gi.Com_Print("FindIntermissionPoint target 2\n");
 				dir = (target->s.origin - level.intermission_origin).normalized();
-				AngleVectors(dir);
-				level.intermission_angle = dir;
+				level.intermission_angle = vectoangles(dir);
 			}
 		}
 	}
@@ -2286,31 +2570,30 @@ void SetIntermissionPoint(void) {
 	if (ent) {
 		level.intermission_origin = ent->s.origin;
 		level.spawn_spots[SPAWN_SPOT_INTERMISSION] = ent;
-	}
-	
-	// ugly hax!
-	if (!Q_strncasecmp(level.mapname, "campgrounds", 11)) {
-		gvec3_t v = { -320, -96, 503 };
-		if (ent->s.origin == v)
-			level.intermission_angle[PITCH] = -30;
-	} else if (!Q_strncasecmp(level.mapname, "rdm10", 5)) {
-		gvec3_t v = { -1256, -1672, -136 };
-		if (ent->s.origin == v)
-			level.intermission_angle = { 15, 135, 0 };
-	} else {
-		// if it has a target, look towards it
-		if (ent && ent->target) {
-			gentity_t *target = G_PickTarget(ent->target);
 
-			if (target) {
-				//gi.Com_Print("HAS TARGET\n");
-				vec3_t	dir = (target->s.origin - level.intermission_origin).normalized();
-				AngleVectors(dir);
-				level.intermission_angle = dir;
+		// ugly hax!
+		if (!Q_strncasecmp(level.mapname, "campgrounds", 11)) {
+			gvec3_t v = { -320, -96, 503 };
+			if (ent->s.origin == v)
+				level.intermission_angle[PITCH] = -30;
+		} else if (!Q_strncasecmp(level.mapname, "rdm10", 5)) {
+			gvec3_t v = { -1256, -1672, -136 };
+			if (ent->s.origin == v)
+				level.intermission_angle = { 15, 135, 0 };
+		} else {
+			// if it has a target, look towards it
+			if (ent->target) {
+				gentity_t *target = G_PickTarget(ent->target);
+
+				if (target) {
+					//gi.Com_Print("HAS TARGET\n");
+					vec3_t	dir = (target->s.origin - level.intermission_origin).normalized();
+					level.intermission_angle = vectoangles(dir);
+				}
 			}
+			if (!level.intermission_angle)
+				level.intermission_angle = ent->s.angles;
 		}
-		if (ent && !level.intermission_angle)
-			level.intermission_angle = ent->s.angles;
 	}
 	
 	//gi.Com_PrintFmt("{}: origin={} angles={}\n", __FUNCTION__, level.intermission_origin, level.intermission_angle);
@@ -2994,7 +3277,8 @@ void Match_End() {
 							if (values[0] == level.mapname)
 								std::swap(values[0], values[values.size() - 1]);
 
-							gi.cvar_forceset("g_map_list", fmt::format("{}", join_strings(values, " ")).data());
+						auto shuffled_map_list = join_strings(values, " ");
+						gi.cvar_forceset("g_map_list", shuffled_map_list.c_str());
 
 							BeginIntermission(CreateTargetChangeLevel(values[0].c_str()));
 							return;
@@ -3430,33 +3714,62 @@ ExitLevel
 */
 void ExitLevel() {
 	if (deathmatch->integer && g_dm_intermission_shots->integer && level.num_playing_human_clients > 0) {
-		struct tm *ltime;
-		time_t gmtime;
+		time_t	current_time;
+		struct tm	local_time {};
+		bool	have_time = time(&current_time) != static_cast<time_t>(-1);
 
-		time(&gmtime);
-		ltime = localtime(&gmtime);
-		time(&gmtime);
-		ltime = localtime(&gmtime);
-
-		const char *s = "";
-
-		if (GT(GT_DUEL)) {
-			gentity_t *e1 = &g_entities[level.sorted_clients[0] + 1];
-			gentity_t *e2 = &g_entities[level.sorted_clients[1] + 1];
-			const char *n1 = e1 ? e1->client->resp.netname : "";
-			const char *n2 = e2 ? e2->client->resp.netname : "";
-
-			s = G_Fmt("screenshot {}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n",
-				n1, n2, level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
-			gi.Com_Print(s);
-		} else {
-			gentity_t *ent = &g_entities[1];
-			const char *name = ent->client->follow_target ? ent->client->follow_target->client->resp.netname : ent->client->resp.netname;
-
-			s = G_Fmt("screenshot {}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n", gt_short_name_upper[g_gametype->integer],
-				name, level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
+		if (have_time) {
+#if defined(_WIN32)
+			have_time = localtime_s(&local_time, &current_time) == 0;
+#else
+			have_time = localtime_r(&current_time, &local_time) != nullptr;
+#endif
 		}
-		gi.AddCommandString(s);
+
+		if (!have_time) {
+			gi.Com_Print("Failed to resolve local time for intermission screenshot.\n");
+		} else {
+			std::string	screenshot_command;
+
+			const auto first_index = level.sorted_clients[0];
+			const auto second_index = level.sorted_clients[1];
+			const bool have_first = first_index >= 0 && first_index < static_cast<int>(MAX_CLIENTS);
+			const bool have_second = second_index >= 0 && second_index < static_cast<int>(MAX_CLIENTS);
+
+			if (GT(GT_DUEL) && level.num_playing_human_clients > 1 && have_first && have_second) {
+				gentity_t *e1 = &g_entities[first_index + 1];
+				gentity_t *e2 = &g_entities[second_index + 1];
+				const char *n1 = (e1 && e1->client) ? e1->client->resp.netname : "";
+				const char *n2 = (e2 && e2->client) ? e2->client->resp.netname : "";
+
+				screenshot_command = std::string(G_Fmt("screenshot {}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n",
+					n1, n2, level.mapname, 1900 + local_time.tm_year, local_time.tm_mon + 1, local_time.tm_mday, local_time.tm_hour, local_time.tm_min, local_time.tm_sec));
+				gi.Com_Print(screenshot_command.c_str());
+			} else if (have_first) {
+				gentity_t *ent = &g_entities[first_index + 1];
+				const bool has_follow_target = ent && ent->client && ent->client->follow_target && ent->client->follow_target->client;
+				const char *name = has_follow_target ? ent->client->follow_target->client->resp.netname :
+					(ent && ent->client ? ent->client->resp.netname : "");
+
+				screenshot_command = std::string(G_Fmt("screenshot {}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n", gt_short_name_upper[g_gametype->integer],
+					name, level.mapname, 1900 + local_time.tm_year, local_time.tm_mon + 1, local_time.tm_mday, local_time.tm_hour, local_time.tm_min, local_time.tm_sec));
+			} else {
+				for (auto player : active_clients()) {
+					if (!player->client || !ClientIsPlaying(player->client))
+						continue;
+
+					const bool has_follow_target = player->client->follow_target && player->client->follow_target->client;
+					const char *name = has_follow_target ? player->client->follow_target->client->resp.netname : player->client->resp.netname;
+
+					screenshot_command = std::string(G_Fmt("screenshot {}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n", gt_short_name_upper[g_gametype->integer],
+						name, level.mapname, 1900 + local_time.tm_year, local_time.tm_mon + 1, local_time.tm_mday, local_time.tm_hour, local_time.tm_min, local_time.tm_sec));
+					break;
+				}
+			}
+
+			if (!screenshot_command.empty())
+				gi.AddCommandString(screenshot_command.c_str());
+		}
 	}
 
 	// [Paril-KEX] N64 fade
@@ -3623,13 +3936,25 @@ static void CheckCvars() {
 	CheckMinMaxPlayers();
 }
 
-static bool G_AnyDeadPlayersWithoutLives() {
+/*
+=============
+G_AnyDeadPlayersWithoutLives
+
+Checks for any dead players who have exhausted their lives and should remain eliminated.
+=============
+*/
+static bool G_AnyDeadPlayersWithoutLives(bool limited_lives) {
+	if (!limited_lives)
+		return false;
+
 	for (auto player : active_clients())
 		if (player->health <= 0 && (!player->client->pers.lives || player->client->eliminated))
 			return true;
 
 	return false;
 }
+
+
 
 /*
 ================
@@ -3727,18 +4052,20 @@ static inline void G_RunFrame_(bool main_loop) {
 	// clear client coop respawn states; this is done
 	// early since it may be set multiple times for different
 	// players
-	if (InCoopStyle() && (g_coop_enable_lives->integer || g_coop_squad_respawn->integer)) {
+	if (InCoopStyle() && (g_coop_squad_respawn->integer || g_coop_enable_lives->integer || Horde_LivesEnabled())) {
+		const bool limited_lives = g_coop_enable_lives->integer || Horde_LivesEnabled();
+
 		for (auto player : active_clients()) {
 			if (player->client->respawn_time >= level.time)
 				player->client->coop_respawn_state = COOP_RESPAWN_WAITING;
-			else if (g_coop_enable_lives->integer && player->health <= 0 && player->client->pers.lives == 0)
+			else if (limited_lives && player->health <= 0 && player->client->pers.lives == 0)
 				player->client->coop_respawn_state = COOP_RESPAWN_NO_LIVES;
-			else if (g_coop_enable_lives->integer && G_AnyDeadPlayersWithoutLives())
+			else if (G_AnyDeadPlayersWithoutLives(limited_lives))
 				player->client->coop_respawn_state = COOP_RESPAWN_NO_LIVES;
 			else
 				player->client->coop_respawn_state = COOP_RESPAWN_NONE;
-		}
-	}
+}
+}
 
 	//
 	// treat each object in turn

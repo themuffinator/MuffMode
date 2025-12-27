@@ -106,15 +106,15 @@ void P_DamageFeedback(gentity_t *player) {
 
 	// start a pain animation if still in the player model
 	if (client->anim_priority < ANIM_PAIN && player->s.modelindex == MODELINDEX_PLAYER) {
-		static int i;
+		int &pain_anim_index = client->pain_anim_index;
 
 		client->anim_priority = ANIM_PAIN;
 		if (client->ps.pmove.pm_flags & PMF_DUCKED) {
 			player->s.frame = FRAME_crpain1 - 1;
 			client->anim_end = FRAME_crpain4;
 		} else {
-			i = (i + 1) % 3;
-			switch (i) {
+			pain_anim_index = (pain_anim_index + 1) % 3;
+			switch (pain_anim_index) {
 			case 0:
 				player->s.frame = FRAME_pain101 - 1;
 				client->anim_end = FRAME_pain104;
@@ -132,7 +132,6 @@ void P_DamageFeedback(gentity_t *player) {
 
 		client->anim_time = 0_ms;
 	}
-
 	realcount = count;
 
 	// if we took health damage, do a minimum clamp
@@ -235,8 +234,10 @@ void P_DamageFeedback(gentity_t *player) {
 		for (size_t i = 0; i < client->num_damage_indicators; i++) {
 			auto &indicator = client->damage_indicators[i];
 
+			const int32_t average_damage = (indicator.health + indicator.power + indicator.armor) / 3;
+
 			// encode total damage into 5 bits
-			uint8_t encoded = std::clamp((indicator.health + indicator.power + indicator.armor) / 3, 1, 0x1F);
+			uint8_t encoded = static_cast<uint8_t>(std::clamp<int32_t>(average_damage, 1, 0x1F));
 
 			// encode types in the latter 3 bits
 			if (indicator.health)
@@ -690,15 +691,24 @@ static void P_WorldEffects() {
 		if (breather || envirosuit) {
 			current_player->air_finished = level.time + 10_sec;
 
-			if (((current_client->pu_time_rebreather - level.time).milliseconds() % 2500) == 0) {
-				if (!current_client->breather_sound)
-					gi.sound(current_player, CHAN_AUTO, gi.soundindex("player/u_breath1.wav"), 1, ATTN_NORM, 0);
-				else
-					gi.sound(current_player, CHAN_AUTO, gi.soundindex("player/u_breath2.wav"), 1, ATTN_NORM, 0);
-				current_client->breather_sound ^= 1;
-				PlayerNoise(current_player, current_player->s.origin, PNOISE_SELF);
-				// FIXME: release a bubble?
-			}
+				if (((current_client->pu_time_rebreather - level.time).milliseconds() % 2500) == 0) {
+					if (!current_client->breather_sound)
+						gi.sound(current_player, CHAN_AUTO, gi.soundindex("player/u_breath1.wav"), 1, ATTN_NORM, 0);
+					else
+						gi.sound(current_player, CHAN_AUTO, gi.soundindex("player/u_breath2.wav"), 1, ATTN_NORM, 0);
+					current_client->breather_sound ^= 1;
+					PlayerNoise(current_player, current_player->s.origin, PNOISE_SELF);
+
+					vec3_t breath_origin = current_player->s.origin;
+					breath_origin[2] += current_player->viewheight;
+					vec3_t bubble_end = breath_origin + (up * 8);
+
+					gi.WriteByte(svc_temp_entity);
+					gi.WriteByte(TE_BUBBLETRAIL);
+					gi.WritePosition(breath_origin);
+					gi.WritePosition(bubble_end);
+					gi.multicast(breath_origin, MULTICAST_PVS, false);
+				}
 		}
 
 		// if out of air, start drowning

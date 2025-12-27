@@ -3,32 +3,47 @@
 
 #include "q_std.h"
 
+#include <algorithm>
+#include <vector>
+
 #define GAME_INCLUDE
 #include "bg_local.h"
 
-// [Paril-KEX] generic code to detect & fix a stuck object
+#ifdef G_FIX_STUCK_OBJECT_GENERIC_TESTS
+#include <cassert>
+#endif
+
+/*
+=============
+G_FixStuckObject_Generic
+
+Generic code to detect & fix a stuck object.
+=============
+*/
 stuck_result_t G_FixStuckObject_Generic(vec3_t& origin, const vec3_t& own_mins, const vec3_t& own_maxs, std::function<stuck_object_trace_fn_t> trace) {
 	if (!trace(origin, own_mins, own_maxs, origin).startsolid)
 		return stuck_result_t::GOOD_POSITION;
-
-	struct {
-		float distance;
-		vec3_t origin;
-	} good_positions[6];
-	size_t num_good_positions = 0;
-
-	constexpr struct {
-		std::array<int8_t, 3> normal;
-		std::array<int8_t, 3> mins, maxs;
-	} side_checks[] = {
-		{ { 0, 0, 1 }, { -1, -1, 0 }, { 1, 1, 0 } },
-		{ { 0, 0, -1 }, { -1, -1, 0 }, { 1, 1, 0 } },
-		{ { 1, 0, 0 }, { 0, -1, -1 }, { 0, 1, 1 } },
-		{ { -1, 0, 0 }, { 0, -1, -1 }, { 0, 1, 1 } },
-		{ { 0, 1, 0 }, { -1, 0, -1 }, { 1, 0, 1 } },
-		{ { 0, -1, 0 }, { -1, 0, -1 }, { 1, 0, 1 } },
+	
+	struct GoodPosition {
+	float distance;
+	vec3_t origin;
 	};
-
+	
+	constexpr struct {
+	std::array<int8_t, 3> normal;
+	std::array<int8_t, 3> mins, maxs;
+	} side_checks[] = {
+	{ { 0, 0, 1 }, { -1, -1, 0 }, { 1, 1, 0 } },
+	{ { 0, 0, -1 }, { -1, -1, 0 }, { 1, 1, 0 } },
+	{ { 1, 0, 0 }, { 0, -1, -1 }, { 0, 1, 1 } },
+	{ { -1, 0, 0 }, { 0, -1, -1 }, { 0, 1, 1 } },
+	{ { 0, 1, 0 }, { -1, 0, -1 }, { 1, 0, 1 } },
+	{ { 0, -1, 0 }, { -1, 0, -1 }, { 1, 0, 1 } },
+	};
+	
+	std::vector<GoodPosition> good_positions;
+	good_positions.reserve(q_countof(side_checks));
+	
 	for (size_t sn = 0; sn < q_countof(side_checks); sn++) {
 		auto& side = side_checks[sn];
 		vec3_t start = origin;
@@ -128,21 +143,101 @@ stuck_result_t G_FixStuckObject_Generic(vec3_t& origin, const vec3_t& own_mins, 
 		if (tr.startsolid)
 			continue;
 
-		good_positions[num_good_positions].origin = new_origin;
-		good_positions[num_good_positions].distance = delta.lengthSquared();
-		num_good_positions++;
+		good_positions.emplace_back(GoodPosition{ delta.lengthSquared(), new_origin });
 	}
 
-	if (num_good_positions) {
-		std::sort(&good_positions[0], &good_positions[num_good_positions - 1], [](const auto& a, const auto& b) { return a.distance < b.distance; });
-
-		origin = good_positions[0].origin;
-
+	if (!good_positions.empty()) {
+		const auto best = std::min_element(good_positions.begin(), good_positions.end(), [](const auto &a, const auto &b) {
+			return a.distance < b.distance;
+		});
+	
+		origin = best->origin;
+	
 		return stuck_result_t::FIXED;
 	}
-
+	
 	return stuck_result_t::NO_GOOD_POSITION;
 }
+
+#ifdef G_FIX_STUCK_OBJECT_GENERIC_TESTS
+struct GFixStuckTestTraceState {
+	std::array<vec3_t, 6> offsets = {
+		vec3_t{ 0.0f, 0.0f, 4.0f },
+		vec3_t{ 0.0f, 0.0f, 2.0f },
+		vec3_t{ 0.0f, 0.0f, 1.0f },
+		vec3_t{ 0.0f, 0.0f, 3.0f },
+		vec3_t{ 0.0f, 0.0f, 5.0f },
+		vec3_t{ 0.0f, 0.0f, 6.0f }
+};
+	size_t call = 0;
+};
+
+static GFixStuckTestTraceState g_fix_stuck_trace_state;
+
+/*
+=============
+G_FixStuck_TestTrace
+
+Provides deterministic trace responses for the G_FixStuckObject_Generic test harness.
+=============
+*/
+static trace_t G_FixStuck_TestTrace(const vec3_t& start, const vec3_t& mins, const vec3_t& maxs, const vec3_t& end) {
+	trace_t tr{};
+	const size_t phase = g_fix_stuck_trace_state.call % 3;
+	const size_t side = g_fix_stuck_trace_state.call / 3;
+
+	tr.startsolid = false;
+	tr.endpos = end;
+
+	if (phase == 1 && side < g_fix_stuck_trace_state.offsets.size())
+		tr.endpos = end + g_fix_stuck_trace_state.offsets[side];
+
+	g_fix_stuck_trace_state.call++;
+	return tr;
+}
+
+/*
+=============
+Test_GFixStuckObject_SortingAndRecovery
+
+Verifies that G_FixStuckObject_Generic sorts candidate positions correctly and recovers the nearest option when multiple positions are available.
+=============
+*/
+static void Test_GFixStuckObject_SortingAndRecovery() {
+	g_fix_stuck_trace_state.call = 0;
+	vec3_t origin{ 0.0f, 0.0f, 0.0f };
+	const vec3_t mins{ -1.0f, -1.0f, -1.0f };
+	const vec3_t maxs{ 1.0f, 1.0f, 1.0f };
+
+	const stuck_result_t result = G_FixStuckObject_Generic(origin, mins, maxs, G_FixStuck_TestTrace);
+
+	assert(result == stuck_result_t::FIXED);
+	assert(origin.equals(g_fix_stuck_trace_state.offsets[2]));
+}
+
+/*
+=============
+Run_GFixStuckObject_Generic_Tests
+
+Runs the standalone harness for G_FixStuckObject_Generic.
+=============
+*/
+static void Run_GFixStuckObject_Generic_Tests() {
+	Test_GFixStuckObject_SortingAndRecovery();
+}
+
+#ifdef G_FIX_STUCK_OBJECT_GENERIC_TESTS_MAIN
+/*
+=============
+main
+=============
+*/
+int main() {
+	Run_GFixStuckObject_Generic_Tests();
+	return 0;
+}
+#endif
+#endif
 
 // all of the locals will be zeroed before each
 // pmove, just to make damn sure we don't have

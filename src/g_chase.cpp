@@ -2,6 +2,13 @@
 // Licensed under the GNU General Public License 2.0.
 #include "g_local.h"
 
+/*
+=============
+FreeFollower
+
+Release a client's current follow target and reset chase state.
+=============
+*/
 void FreeFollower(gentity_t *ent) {
 	if (!ent)
 		return;
@@ -22,8 +29,17 @@ void FreeFollower(gentity_t *ent) {
 	ent->client->ps.screen_blend = {};
 	ent->client->ps.damage_blend = {};
 	ent->client->ps.rdflags = RDF_NONE;
+	ent->s.effects = EF_NONE;
+	ent->s.renderfx = RF_NONE;
 }
 
+/*
+=============
+FreeClientFollowers
+
+Release all clients following the specified entity.
+=============
+*/
 void FreeClientFollowers(gentity_t *ent) {
 	if (!ent)
 		return;
@@ -36,6 +52,13 @@ void FreeClientFollowers(gentity_t *ent) {
 	}
 }
 
+/*
+=============
+UpdateChaseCam
+
+Update the chase camera position and visual state to mirror the target.
+=============
+*/
 void UpdateChaseCam(gentity_t *ent) {
 	vec3_t	o, ownerv, goal;
 	gentity_t	*targ = ent->client->follow_target;
@@ -53,6 +76,17 @@ void UpdateChaseCam(gentity_t *ent) {
 
 	ownerv = targ->s.origin;
 	oldgoal = ent->s.origin;
+
+	// ensure the spectator inherits the target's visual blends and render effects
+	ent->client->ps.screen_blend = targ->client->ps.screen_blend;
+	ent->client->ps.damage_blend = targ->client->ps.damage_blend;
+	ent->client->ps.rdflags = targ->client->ps.rdflags;
+	std::copy(targ->client->ps.stats.begin() + STAT_POWERUP_INFO_START, targ->client->ps.stats.begin() + STAT_POWERUP_INFO_END + 1, ent->client->ps.stats.begin() + STAT_POWERUP_INFO_START);
+	ent->client->ps.stats[STAT_FLASHES] = targ->client->ps.stats[STAT_FLASHES];
+	ent->client->ps.stats[STAT_POWERUP_ICON] = targ->client->ps.stats[STAT_POWERUP_ICON];
+	ent->client->ps.stats[STAT_POWERUP_TIME] = targ->client->ps.stats[STAT_POWERUP_TIME];
+	ent->s.effects = targ->s.effects;
+	ent->s.renderfx = targ->s.renderfx;
 
 	// Q2Eaks eyecam handling
 	if (g_eyecam->integer) {

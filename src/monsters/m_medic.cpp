@@ -11,6 +11,7 @@ MEDIC
 #include "../g_local.h"
 #include "m_medic.h"
 #include "m_flash.h"
+#include <algorithm>
 
 constexpr float MEDIC_MIN_DISTANCE = 32;
 constexpr float MEDIC_MAX_HEAL_DISTANCE = 400;
@@ -66,6 +67,15 @@ constexpr std::array<vec3_t, MAX_REINFORCEMENTS> reinforcement_position = {
 	vec3_t { 0, -80, 0 }
 };
 
+static uint8_t next_reinforcement_cursor;
+
+/*
+=============
+M_PickValidReinforcements
+
+Filters the reinforcements that can fit within the available space.
+=============
+*/
 // filter out the reinforcement indices we can pick given the space we have left
 static void M_PickValidReinforcements(gentity_t *self, int32_t space, std::vector<uint8_t> &output) {
 	output.clear();
@@ -76,6 +86,14 @@ static void M_PickValidReinforcements(gentity_t *self, int32_t space, std::vecto
 }
 
 // pick an array of reinforcements to use; note that this does not modify `self`
+/*
+=============
+M_PickReinforcements
+
+Picks reinforcements using a round-robin cursor and avoids immediate repetition
+when alternatives are available.
+=============
+*/
 std::array<uint8_t, MAX_REINFORCEMENTS> M_PickReinforcements(gentity_t *self, int32_t &num_chosen, int32_t max_slots = 0) {
 	static std::vector<uint8_t> available;
 	std::array<uint8_t, MAX_REINFORCEMENTS> chosen;
@@ -88,6 +106,8 @@ std::array<uint8_t, MAX_REINFORCEMENTS> M_PickReinforcements(gentity_t *self, in
 
 	// we only have this many slots left to use
 	int32_t remaining = self->monsterinfo.monster_slots - self->monsterinfo.monster_used;
+	std::vector<uint8_t> used_this_pick;
+	uint8_t last_choice = 255;
 
 	for (num_chosen = 0; num_chosen < num_slots; num_chosen++) {
 		// ran out of slots!
@@ -101,8 +121,29 @@ std::array<uint8_t, MAX_REINFORCEMENTS> M_PickReinforcements(gentity_t *self, in
 		if (!available.size())
 			break;
 
-		// select monster, TODO fairly
-		chosen[num_chosen] = random_element(available);
+		uint8_t choice = 255;
+		size_t start = next_reinforcement_cursor % available.size();
+
+		for (size_t offset = 0; offset < available.size(); offset++) {
+			const uint8_t candidate = available[(start + offset) % available.size()];
+
+			if (available.size() > 1 && candidate == last_choice)
+				continue;
+
+			if (std::find(used_this_pick.begin(), used_this_pick.end(), candidate) != used_this_pick.end())
+				continue;
+
+			choice = candidate;
+			break;
+		}
+
+		if (choice == 255)
+			choice = available[start];
+
+		next_reinforcement_cursor = (next_reinforcement_cursor + 1) % max<size_t>(self->monsterinfo.reinforcements.num_reinforcements, 1);
+		last_choice = choice;
+		used_this_pick.push_back(choice);
+		chosen[num_chosen] = choice;
 
 		remaining -= self->monsterinfo.reinforcements.reinforcements[chosen[num_chosen]].strength;
 	}
@@ -136,7 +177,7 @@ void M_SetupReinforcements(const char *reinforcements, reinforcement_list_t &lis
 		const char *token = COM_ParseEx(&p, "; ");
 
 		if (!*token || r == list.reinforcements + list.num_reinforcements)
-			break;
+		break;
 
 		r->classname = G_CopyString(token, TAG_LEVEL);
 
@@ -1042,8 +1083,8 @@ static void medic_determine_spawn(gentity_t *self) {
 
 		auto &reinforcement = self->monsterinfo.reinforcements.reinforcements[self->monsterinfo.chosen_reinforcements[count]];
 
-		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32)) {
-			if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, -1)) {
+		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32, true, self->gravityVector)) {
+		if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, self->gravityVector)) {
 				num_success++;
 				// we found a spot, we're done here
 				count = num_summoned;
@@ -1068,8 +1109,8 @@ static void medic_determine_spawn(gentity_t *self) {
 
 			auto &reinforcement = self->monsterinfo.reinforcements.reinforcements[self->monsterinfo.chosen_reinforcements[count]];
 
-			if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32)) {
-				if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, -1)) {
+				if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32, true, self->gravityVector)) {
+				if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, self->gravityVector)) {
 					num_success++;
 					// we found a spot, we're done here
 					count = num_summoned;
@@ -1115,7 +1156,7 @@ static void medic_spawngrows(gentity_t *self) {
 
 	for (size_t i = 0; i < MAX_REINFORCEMENTS; i++, num_summoned++)
 		if (self->monsterinfo.chosen_reinforcements[i] == 255)
-			break;
+		break;
 
 	for (count = 0; count < num_summoned; count++) {
 		offset = reinforcement_position[count];
@@ -1127,8 +1168,8 @@ static void medic_spawngrows(gentity_t *self) {
 
 		auto &reinforcement = self->monsterinfo.reinforcements.reinforcements[self->monsterinfo.chosen_reinforcements[count]];
 
-		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32)) {
-			if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, -1)) {
+		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32, true, self->gravityVector)) {
+		if (CheckGroundSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, 256, self->gravityVector)) {
 				num_success++;
 				float radius = (reinforcement.maxs - reinforcement.mins).length() * 0.5f;
 				SpawnGrow_Spawn(spawnpoint + (reinforcement.mins + reinforcement.maxs), radius, radius * 2.f);
@@ -1153,7 +1194,7 @@ static void medic_finish_spawn(gentity_t *self) {
 
 	for (size_t i = 0; i < MAX_REINFORCEMENTS; i++, num_summoned++)
 		if (self->monsterinfo.chosen_reinforcements[i] == 255)
-			break;
+		break;
 
 	for (count = 0; count < num_summoned; count++) {
 		auto &reinforcement = self->monsterinfo.reinforcements.reinforcements[self->monsterinfo.chosen_reinforcements[count]];
@@ -1165,8 +1206,8 @@ static void medic_finish_spawn(gentity_t *self) {
 		startpoint[2] += 10 * (self->s.scale ? self->s.scale : 1.0f);
 
 		ent = nullptr;
-		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32)) {
-			if (CheckSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs))
+		if (FindSpawnPoint(startpoint, reinforcement.mins, reinforcement.maxs, spawnpoint, 32, true, self->gravityVector)) {
+		if (CheckSpawnPoint(spawnpoint, reinforcement.mins, reinforcement.maxs, self->gravityVector))
 				ent = CreateGroundMonster(spawnpoint, self->s.angles, reinforcement.mins, reinforcement.maxs, reinforcement.classname, 256);
 		}
 

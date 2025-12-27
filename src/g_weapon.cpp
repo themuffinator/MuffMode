@@ -134,57 +134,59 @@ struct fire_lead_pierce_t : pierce_args_t {
 		te_impact(te_impact),
 		mask(mask) {}
 
-	// we hit an entity; return false to stop the piercing.
-	// you can adjust the mask for the re-trace (for water, etc).
-	bool hit(contents_t &mask, vec3_t &end) override {
-		// see if we hit water
-		if (tr.contents & MASK_WATER) {
-			int color;
+        /*
+        =============
+        hit
 
-			water = true;
-			water_start = tr.endpos;
+        Handle trace impacts, including water entry splash and retrace behavior.
+        =============
+        */
+        // we hit an entity; return false to stop the piercing.
+        // you can adjust the mask for the re-trace (for water, etc).
+        bool hit(contents_t &mask, vec3_t &end) override {
+                // see if we hit water
+                if (tr.contents & MASK_WATER) {
+                        int color = SPLASH_UNKNOWN;
 
-			// CHECK: is this compare ever true?
-			if (te_impact != -1 && start != tr.endpos) {
-				if (tr.contents & CONTENTS_WATER) {
-					// FIXME: this effectively does nothing..
-					if (strcmp(tr.surface->name, "brwater") == 0)
-						color = SPLASH_BROWN_WATER;
-					else
-						color = SPLASH_BLUE_WATER;
-				} else if (tr.contents & CONTENTS_SLIME)
-					color = SPLASH_SLIME;
-				else if (tr.contents & CONTENTS_LAVA)
-					color = SPLASH_LAVA;
-				else
-					color = SPLASH_UNKNOWN;
+                        water = true;
+                        water_start = tr.endpos;
 
-				if (color != SPLASH_UNKNOWN) {
-					gi.WriteByte(svc_temp_entity);
-					gi.WriteByte(TE_SPLASH);
-					gi.WriteByte(8);
-					gi.WritePosition(tr.endpos);
-					gi.WriteDir(tr.plane.normal);
-					gi.WriteByte(color);
-					gi.multicast(tr.endpos, MULTICAST_PVS, false);
-				}
+                        if (tr.contents & CONTENTS_LAVA)
+                                color = SPLASH_LAVA;
+                        else if (tr.contents & CONTENTS_SLIME)
+                                color = SPLASH_SLIME;
+                        else if (tr.contents & CONTENTS_WATER) {
+                                if (tr.surface && strcmp(tr.surface->name, "brwater") == 0)
+                                        color = SPLASH_BROWN_WATER;
+                                else
+                                        color = SPLASH_BLUE_WATER;
+                        }
 
-				// change bullet's course when it enters water
-				vec3_t dir, forward, right, up;
-				dir = end - start;
-				dir = vectoangles(dir);
-				AngleVectors(dir, forward, right, up);
-				float r = crandom() * hspread * 2;
-				float u = crandom() * vspread * 2;
-				end = water_start + (forward * 8192);
-				end += (right * r);
-				end += (up * u);
-			}
+                        if (te_impact != -1 && color != SPLASH_UNKNOWN) {
+                                gi.WriteByte(svc_temp_entity);
+                                gi.WriteByte(TE_SPLASH);
+                                gi.WriteByte(8);
+                                gi.WritePosition(tr.endpos);
+                                gi.WriteDir(tr.plane.normal);
+                                gi.WriteByte(color);
+                                gi.multicast(tr.endpos, MULTICAST_PVS, false);
+                        }
 
-			// re-trace ignoring water this time
-			mask &= ~MASK_WATER;
-			return true;
-		}
+                        // change bullet's course when it enters water
+                        vec3_t dir, forward, right, up;
+                        dir = end - tr.endpos;
+                        dir = vectoangles(dir);
+                        AngleVectors(dir, forward, right, up);
+                        float r = crandom() * hspread * 2;
+                        float u = crandom() * vspread * 2;
+                        end = water_start + (forward * 8192);
+                        end += (right * r);
+                        end += (up * u);
+
+                        // re-trace ignoring water this time
+                        mask &= ~MASK_WATER;
+                        return true;
+                }
 
 		// did we hit an hurtable entity?
 		if (tr.ent->takedamage) {
@@ -558,22 +560,33 @@ constexpr spawnflags_t SPAWNFLAG_GRENADE_HAND = 1_spawnflag;
 constexpr spawnflags_t SPAWNFLAG_GRENADE_HELD = 2_spawnflag;
 
 /*
-=================
-fire_grenade
-=================
+=============
+Grenade_Explode
+
+Handle grenade detonation damage and visual effects.
+=============
 */
 static THINK(Grenade_Explode) (gentity_t *ent) -> void {
-	vec3_t origin;
-	mod_t  mod;
+	vec3_t	explosion_origin;
+	vec3_t	origin;
+	mod_t	mod;
+
+	explosion_origin = ent->s.origin;
+	if (ent->groundentity) {
+		explosion_origin[2] += 4.f;
+		vec3_t delta = explosion_origin - ent->s.origin;
+		ent->s.origin = explosion_origin;
+		ent->absmin += delta;
+		ent->absmax += delta;
+	}
 
 	if (ent->owner->client)
 		PlayerNoise(ent->owner, ent->s.origin, PNOISE_IMPACT);
 
-	// FIXME: if we are onground then raise our Z just a bit since we are a point?
 	if (ent->enemy) {
-		float  points;
-		vec3_t v;
-		vec3_t dir;
+		float	points;
+		vec3_t	v;
+		vec3_t	dir;
 
 		v = ent->enemy->mins + ent->enemy->maxs;
 		v = ent->enemy->s.origin + (v * 0.5f);
@@ -616,6 +629,7 @@ static THINK(Grenade_Explode) (gentity_t *ent) -> void {
 
 	G_FreeEntity(ent);
 }
+
 
 static TOUCH(Grenade_Touch) (gentity_t *ent, gentity_t *other, const trace_t &tr, bool other_touching_self) -> void {
 	if (other == ent->owner)

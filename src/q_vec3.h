@@ -4,6 +4,7 @@
 #pragma once
 
 // q_vec3 - vec3 stuff
+#include <cmath>
 #include <stdexcept>
 #include <type_traits>
 
@@ -12,6 +13,18 @@ using nullptr_t = std::nullptr_t;
 struct vec3_t
 {
 	float x, y, z;
+
+	/*
+	=============
+	abs
+
+	Returns a vector containing the absolute value of each component.
+	=============
+	*/
+	[[nodiscard]] inline vec3_t abs() const
+	{
+		return { fabsf(x), fabsf(y), fabsf(z) };
+	}
 
 	[[nodiscard]] constexpr const float &operator[](size_t i) const
 	{
@@ -167,6 +180,30 @@ struct vec3_t
 };
 
 constexpr vec3_t vec3_origin{};
+
+/*
+=============
+DotProduct
+
+Returns the dot product of two vectors.
+=============
+*/
+[[nodiscard]] inline float DotProduct(const vec3_t &v1, const vec3_t &v2)
+{
+	return v1.dot(v2);
+}
+
+/*
+=============
+Q_fabs
+
+Returns the absolute value of a floating point number.
+=============
+*/
+[[nodiscard]] inline float Q_fabs(float value)
+{
+	return fabsf(value);
+}
 
 inline void AngleVectors(const vec3_t &angles, vec3_t *forward, vec3_t *right, vec3_t *up)
 {
