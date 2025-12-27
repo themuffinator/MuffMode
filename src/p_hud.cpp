@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 #include "g_local.h"
 #include "g_statusbar.h"
+#include "p_hud_victor.h"
 
 /*
 ======================================================================
@@ -11,21 +12,55 @@ INTERMISSION
 ======================================================================
 */
 
+/*
+=============
+EndMatchVictorString
+
+Determines the intermission victor string for the current match and copies it into the level buffer.
+=============
+*/
 static const char *EndMatchVictorString() {
 	if (!level.intermission_time)
 		return nullptr;
 
-	const char *s = nullptr;
+	intermission_victor_context_t context{};
+	context.intermission_active = true;
+	context.existing_message = level.intermission_victor_msg[0] ? level.intermission_victor_msg : nullptr;
 
-	if (Teams() && !(GT(GT_RR))) {
-		
-		return s;
+	context.teams = Teams() && !(GT(GT_RR));
+
+	if (context.teams) {
+		context.red_score = level.team_scores[TEAM_RED];
+		context.blue_score = level.team_scores[TEAM_BLUE];
+		context.red_name = Teams_TeamName(TEAM_RED);
+		context.blue_name = Teams_TeamName(TEAM_BLUE);
+	} else {
+		if (level.sorted_clients[0] >= 0) {
+			gclient_t *leader = &game.clients[level.sorted_clients[0]];
+			context.ffa_winner_name = leader->resp.netname;
+			context.ffa_winner_score = leader->resp.score;
+		}
+
+		if (level.sorted_clients[1] >= 0) {
+			gclient_t *runner = &game.clients[level.sorted_clients[1]];
+			context.ffa_runner_up_present = true;
+			context.ffa_runner_up_score = runner->resp.score;
+		}
 	}
 
+	const char *victor = BuildIntermissionVictorString(context, level.intermission_victor_msg, sizeof(level.intermission_victor_msg));
+	return victor ? victor : nullptr;
 }
 
 void MultiplayerScoreboard(gentity_t *ent);
 
+/*
+=============
+MoveClientToIntermission
+
+Move a client into the intermission state and set HUD visibility.
+=============
+*/
 void MoveClientToIntermission(gentity_t *ent) {
 	// [Paril-KEX]
 	if (ent->client->ps.pmove.pm_type != PM_FREEZE)
@@ -57,7 +92,9 @@ void MoveClientToIntermission(gentity_t *ent) {
 	ent->client->grenade_time = 0_ms;
 
 	ent->client->showhelp = false;
-	ent->client->showscores = false;
+
+	if (!deathmatch->integer)
+		ent->client->showscores = false;
 
 	globals.server_flags &= ~SERVER_FLAG_SLOW_TIME;
 
@@ -322,6 +359,8 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -30 cstring2 \"Score Limit: {}\" "), GT_ScoreLimit());
 
 	if (level.intermission_time) {
+		EndMatchVictorString();
+
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -50 cstring2 \"{} - {}\" "), level.gamemod_name, level.gametype_name);
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -40 cstring2 \"[{}] {}\" "), level.mapname, level.level_name);
 		if (level.match_start_time) {
@@ -345,7 +384,7 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 			*/
 		if (timelimit->value && !level.intermission_time) {
 			//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 time_limit {} "), gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms);
-#if 0
+	#if 0
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 {} "), gi.ServerFrame() + level.time.milliseconds() / gi.frame_time_ms);
 			int32_t val = gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms;
 			const char *s;
@@ -354,7 +393,7 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 			s = G_Fmt("{:02}:{:02}", (remaining_ms / 1000) / 60, (remaining_ms / 1000) % 60).data();
 
 			fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 \"{}\" "), s);
-#endif
+	#endif
 		}
 
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -48 cstring2 \"{}\" "), "Use inventory bind to toggle menu.");
@@ -504,10 +543,13 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 
 	if (total[0] - last[0] > 1) // couldn't fit everyone
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv -32 yv {} loc_string 1 $g_ctf_and_more {} "),
-			42 + (last[0] + 1) * 8, total[0] - last[0] - 1);
+				42 + (last[0] + 1) * 8, total[0] - last[0] - 1);
 	if (total[1] - last[1] > 1) // couldn't fit everyone
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv 208 yv {} loc_string 1 $g_ctf_and_more {} "),
-			42 + (last[1] + 1) * 8, total[1] - last[1] - 1);
+				42 + (last[1] + 1) * 8, total[1] - last[1] - 1);
+
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -24 cstring2 \"{}\" "), "www.darkmatter-quake.com");
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -12 cstring2 \"{}\" "), "community | tournaments | content | news");
 
 	gi.WriteByte(svc_layout);
 	gi.WriteString(string.c_str());
@@ -531,6 +573,8 @@ static void DuelScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -30 cstring2 \"Score Limit: {}\" "), GT_ScoreLimit());
 
 	if (level.intermission_time) {
+		EndMatchVictorString();
+
 		if (level.match_start_time) {
 			int	t = (level.intermission_time - level.match_start_time - 1_sec).milliseconds();
 			fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -50 cstring2 \"Total Match Time: {}\" "), G_TimeStringMs(t, false));
@@ -722,6 +766,9 @@ static void DuelScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 		fmt::format_to(std::back_inserter(string), FMT_STRING("ifgef {} yb -48 xv 0 loc_cstring2 0 \"$m_eou_press_button\" endif "), (level.intermission_server_frame + (5_sec).frames()));
 	else
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -48 cstring2 \"{}\" "), "Show inventory to toggle menu.");
+	
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -24 cstring2 \"{}\" "), "www.darkmatter-quake.com");
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -12 cstring2 \"{}\" "), "community | tournaments | content | news");
 
 	gi.WriteByte(svc_layout);
 	gi.WriteString(string.c_str());
@@ -732,6 +779,8 @@ static inline void ScoreboardNotice(gentity_t *ent, std::string string) {
 	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -30 cstring2 \"Score Limit: {}\" "), GT_ScoreLimit());
 
 	if (level.intermission_time) {
+		EndMatchVictorString();
+
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -50 cstring2 \"{} - {}\" "), level.gamemod_name, level.gametype_name);
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -40 cstring2 \"[{}] {}\" "), level.mapname, level.level_name);
 		if (level.match_start_time) {
@@ -752,11 +801,11 @@ static inline void ScoreboardNotice(gentity_t *ent, std::string string) {
 		/*
 		else if (GT(GT_HORDE) && level.round_number > 0)
 			fmt::format_to(std::back_inserter(string), FMT_STRING("xv -20 yv -10 loc_string2 1 Wave: \"{}\" "), level.round_number);
-			*/
+		*/
 		if (timelimit->value && !level.intermission_time) {
 			//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 time_limit {} "), gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms);
-#if 0
-		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 {} "), gi.ServerFrame() + level.time.milliseconds() / gi.frame_time_ms);
+	#if 0
+			//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 {} "), gi.ServerFrame() + level.time.milliseconds() / gi.frame_time_ms);
 			int32_t val = gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms;
 			const char *s;
 			int32_t remaining_ms = gtime_t::from_ms(level.time);	// (val - gi.ServerFrame()) *gi.frame_time_ms;
@@ -764,12 +813,13 @@ static inline void ScoreboardNotice(gentity_t *ent, std::string string) {
 			s = G_Fmt("{:02}:{:02}", (remaining_ms / 1000) / 60, (remaining_ms / 1000) % 60).data();
 
 			fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 \"{}\" "), s);
-#endif
+	#endif
 		}
 
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -48 cstring2 \"{}\" "), "Use inventory bind to toggle menu.");
 	}
 }
+
 
 /*
 ==================
@@ -851,6 +901,8 @@ void DeathmatchScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -30 cstring2 \"Score Limit: {}\" "), GT_ScoreLimit());
 
 	if (level.intermission_time) {
+		EndMatchVictorString();
+
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -50 cstring2 \"{} - {}\" "), level.gamemod_name, level.gametype_name);
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yv -40 cstring2 \"[{}] {}\" "), level.mapname, level.level_name);
 		if (level.match_start_time) {
@@ -875,7 +927,7 @@ void DeathmatchScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 			*/
 		if (timelimit->value && !level.intermission_time) {
 			//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 time_limit {} "), gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms);
-#if 0
+	#if 0
 		//fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 {} "), gi.ServerFrame() + level.time.milliseconds() / gi.frame_time_ms);
 			int32_t val = gi.ServerFrame() + ((gtime_t::from_min(timelimit->value) - level.time)).milliseconds() / gi.frame_time_ms;
 			const char *s;
@@ -884,11 +936,14 @@ void DeathmatchScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 			s = G_Fmt("{:02}:{:02}", (remaining_ms / 1000) / 60, (remaining_ms / 1000) % 60).data();
 
 			fmt::format_to(std::back_inserter(string), FMT_STRING("xv 340 yv -10 loc_string2 1 \"{}\" "), s);
-#endif
+	#endif
 		}
 
 		fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -48 cstring2 \"{}\" "), "Use inventory bind to toggle menu.");
 	}
+
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -24 cstring2 \"{}\" "), "www.darkmatter-quake.com");
+	fmt::format_to(std::back_inserter(string), FMT_STRING("xv 0 yb -12 cstring2 \"{}\" "), "community | tournaments | content | news");
 
 	gi.WriteByte(svc_layout);
 	gi.WriteString(string.c_str());
@@ -1070,7 +1125,7 @@ void Cmd_Help_f(gentity_t *ent) {
 // even if we're spectating
 void G_SetCoopStats(gentity_t *ent) {
 
-	if (InCoopStyle() && g_coop_enable_lives->integer)
+	if (InCoopStyle() && (g_coop_enable_lives->integer || Horde_LivesEnabled()))
 		ent->client->ps.stats[STAT_LIVES] = ent->client->pers.lives + 1;
 	else
 		ent->client->ps.stats[STAT_LIVES] = 0;

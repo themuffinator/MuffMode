@@ -24,7 +24,26 @@
 //   does have some C-isms in here.
 constexpr size_t SAVE_FORMAT_VERSION = 1;
 
+/*
+=============
+GetEngineBuildString
+
+Fetches the engine build string from the version cvar.
+=============
+*/
+static const char *GetEngineBuildString() {
+	cvar_t *engine_version = gi.cvar("version", "", 0);
+
+	if (!engine_version || !engine_version->string)
+		return "";
+
+	return engine_version->string;
+}
+
 #include <unordered_map>
+#include <vector>
+#include <memory>
+#include <cstring>
 
 // Professor Daniel J. Bernstein; https://www.partow.net/programming/hashfunctions/#APHashFunction MIT
 struct cstring_hash {
@@ -57,9 +76,38 @@ static const save_data_list_t *list_head = nullptr;
 static std::unordered_map<const void *, const save_data_list_t *> list_hash;
 static std::unordered_map<const char *, const save_data_list_t *, cstring_hash, cstring_equal> list_str_hash;
 static std::unordered_map<std::tuple<const void *, save_data_tag_t>, const save_data_list_t *, ptr_tag_hash> list_from_ptr_hash;
+static std::vector<std::unique_ptr<char[]>> list_name_storage;
+
+/*
+=============
+StoreListNameCopy
+
+Duplicates a save data name for safe storage in the string hash map.
+=============
+*/
+static const char *StoreListNameCopy(const char *name) {
+	if (!name)
+		return nullptr;
+
+	const size_t name_len = strlen(name) + 1;
+	std::unique_ptr<char[]> stored_name = std::make_unique<char[]>(name_len);
+
+	memcpy(stored_name.get(), name, name_len);
+
+	list_name_storage.emplace_back(std::move(stored_name));
+
+	return list_name_storage.back().get();
+}
 
 #include <cassert>
 
+/*
+=============
+InitSave
+
+Initializes the save data lists and validates for duplicates.
+=============
+*/
 void InitSave() {
 	if (save_data_initialized)
 		return;
@@ -67,90 +115,221 @@ void InitSave() {
 	for (const save_data_list_t *link = list_head; link; link = link->next) {
 		const void *link_ptr = link;
 
-		if (list_hash.find(link_ptr) != list_hash.end()) {
-			auto existing = *list_hash.find(link_ptr);
-
-			// [0] is just to silence warning
-			assert(false || "invalid save pointer; break here to find which pointer it is"[0]);
+		auto existing_ptr = list_hash.find(link_ptr);
+		if (existing_ptr != list_hash.end()) {
+			const save_data_list_t *existing = existing_ptr->second;
 
 			if (!deathmatch->integer) {
 				if (g_strict_saves->integer)
-					gi.Com_ErrorFmt("link pointer {} already linked as {}; fatal error", link_ptr, existing.second->name);
+					gi.Com_ErrorFmt("duplicate save link pointer {} for type {} (tag {}) already mapped to {} (tag {})", link_ptr, link->name, (int32_t)link->tag, existing->name, (int32_t)existing->tag);
 				else
-					gi.Com_PrintFmt("link pointer {} already linked as {}; fatal error", link_ptr, existing.second->name);
+					gi.Com_PrintFmt("duplicate save link pointer {} for type {} (tag {}) already mapped to {} (tag {})", link_ptr, link->name, (int32_t)link->tag, existing->name, (int32_t)existing->tag);
 			}
+
+			continue;
 		}
 
-		if (list_str_hash.find(link->name) != list_str_hash.end()) {
-			auto existing = *list_str_hash.find(link->name);
-
-			// [0] is just to silence warning
-			assert(false || "invalid save pointer; break here to find which pointer it is"[0]);
+		auto existing_name = list_str_hash.find(link->name);
+		if (existing_name != list_str_hash.end()) {
+			const save_data_list_t *existing = existing_name->second;
 
 			if (!deathmatch->integer) {
+				const void *existing_ptr = reinterpret_cast<const void *>(existing);
+
 				if (g_strict_saves->integer)
-					gi.Com_ErrorFmt("link pointer {} already linked as {}; fatal error", link_ptr, existing.second->name);
+					gi.Com_ErrorFmt("duplicate save type name {} (tag {}) already linked to pointer {}, cannot add pointer {}", link->name, (int32_t)link->tag, existing_ptr, link_ptr);
 				else
-					gi.Com_PrintFmt("link pointer {} already linked as {}; fatal error", link_ptr, existing.second->name);
+					gi.Com_PrintFmt("duplicate save type name {} (tag {}) already linked to pointer {}, cannot add pointer {}", link->name, (int32_t)link->tag, existing_ptr, link_ptr);
 			}
+
+			continue;
 		}
 
 		list_hash.emplace(link_ptr, link);
-		list_str_hash.emplace(link->name, link);
+		const char *stored_name = StoreListNameCopy(link->name);
+		list_str_hash.emplace(stored_name ? stored_name : link->name, link);
 		list_from_ptr_hash.emplace(std::make_tuple(link->ptr, link->tag), link);
 	}
 
+
 	save_data_initialized = true;
 }
-
 // initializer for save data
-save_data_list_t::save_data_list_t(const char *name_in, save_data_tag_t tag_in, const void *ptr_in) :
+/*
+=============
+save_data_list_t::save_data_list_t
+
+Registers a save data entry and optionally links it into the global list used for lookups.
+=============
+*/
+save_data_list_t::save_data_list_t(const char *name_in, save_data_tag_t tag_in, const void *ptr_in, bool link, bool valid_in) :
 	name(name_in),
 	tag(tag_in),
-	ptr(ptr_in) {
-	if (save_data_initialized)
+	ptr(ptr_in),
+	next(nullptr),
+	valid(valid_in) {
+	assert(name_in);
+
+	if (!name_in)
+		gi.Com_Error("save data entry name cannot be null");
+
+	if (save_data_initialized && link)
 		gi.Com_Error("attempted to create save_data_list at runtime");
 
-	next = list_head;
-	list_head = this;
+	if (link) {
+		next = list_head;
+		list_head = this;
+	}
 }
 
+/*
+=============
+save_data_list_t::fetch
+
+Fetches a save data entry for a pointer/tag pair, returning a sentinel when missing.
+=============
+*/
 const save_data_list_t *save_data_list_t::fetch(const void *ptr, save_data_tag_t tag) {
 	auto link = list_from_ptr_hash.find(std::make_tuple(ptr, tag));
 
 	if (link != list_from_ptr_hash.end() && link->second->tag == tag)
 		return link->second;
 
-	// [0] is just to silence warning
-	assert(false || "invalid save pointer; break here to find which pointer it is"[0]);
+	const char *tag_name = nullptr;
+
+	for (const auto &entry : list_hash) {
+		if (entry.second && entry.second->tag == tag) {
+			tag_name = entry.second->name;
+			break;
+		}
+	}
 
 	if (g_strict_saves->integer)
-		gi.Com_ErrorFmt("value pointer {} was not linked to save tag {}\n", ptr, (int32_t)tag);
+		gi.Com_ErrorFmt("value pointer {} was not linked to save tag {} ({})\n", ptr, (int32_t)tag, tag_name ? tag_name : "<unknown>");
 	else
-		gi.Com_PrintFmt("value pointer {} was not linked to save tag {}\n", ptr, (int32_t)tag);
+		gi.Com_PrintFmt("value pointer {} was not linked to save tag {} ({})\n", ptr, (int32_t)tag, tag_name ? tag_name : "<unknown>");
 
-	return nullptr;
+	static save_data_list_t invalid_save_data("<invalid save data>", SAVE_DATA_MMOVE, nullptr, false, false);
+
+	invalid_save_data.tag = tag;
+	invalid_save_data.ptr = ptr;
+
+	return &invalid_save_data;
 }
 
 std::string json_error_stack;
 
+/*
+=============
+json_stack_segment
+
+Pushes a stack segment on construction and pops it on destruction to ensure
+balanced JSON stack usage.
+=============
+*/
+class json_stack_segment {
+public:
+	/*
+	=============
+	json_stack_segment
+
+	Pushes the provided stack segment when the guard is constructed.
+	=============
+	*/
+	template<typename T>
+	explicit json_stack_segment(const T &stack) {
+		json_push_stack(stack);
+	}
+
+	/*
+	=============
+	~json_stack_segment
+
+	Pops the active stack segment when the guard is destroyed.
+	=============
+	*/
+	~json_stack_segment() {
+		json_pop_stack();
+	}
+};
+
+/*
+=============
+json_push_stack
+
+Pushes a new context onto the JSON error stack.
+=============
+*/
 void json_push_stack(const std::string &stack) {
 	json_error_stack += "::" + stack;
 }
 
-void json_pop_stack() {
-	size_t o = json_error_stack.find_last_of("::");
+/*
+=============
+json_pop_stack
 
-	if (o != std::string::npos)
-		json_error_stack.resize(o - 1);
+Removes the most recent context, including its preceding delimiter, from the JSON error stack.
+=============
+*/
+void json_pop_stack() {
+	const size_t delimiter = json_error_stack.rfind("::");
+
+	if (delimiter != std::string::npos)
+		json_error_stack.erase(delimiter);
 }
 
+/*
+=============
+json_print_error
+
+Prints JSON load errors with the current stack context, optionally treating them as fatal.
+=============
+*/
 void json_print_error(const char *field, const char *message, bool fatal) {
-	if (fatal || g_strict_saves->integer)
+	if (fatal || g_strict_saves->integer) {
 		gi.Com_ErrorFmt("Error loading JSON\n{}.{}: {}", json_error_stack, field, message);
+
+		return;
+	}
 
 	gi.Com_PrintFmt("Warning loading JSON\n{}.{}: {}\n", json_error_stack, field, message);
 }
+
+#ifndef NDEBUG
+/*
+=============
+json_run_stack_tests
+
+Verifies nested JSON stack push/pop calls restore the stack without leaving delimiters behind.
+=============
+*/
+static void json_run_stack_tests() {
+	const std::string original_stack = json_error_stack;
+
+	json_error_stack.clear();
+	json_push_stack("outer");
+	json_push_stack("inner");
+	assert(json_error_stack == "::outer::inner");
+
+	json_pop_stack();
+	assert(json_error_stack == "::outer");
+
+	json_pop_stack();
+	assert(json_error_stack.empty());
+
+	json_error_stack = "::root";
+	json_push_stack("child");
+	json_push_stack("grandchild");
+	json_pop_stack();
+	assert(json_error_stack == "::root::child");
+	json_pop_stack();
+	assert(json_error_stack == "::root");
+	json_pop_stack();
+	assert(json_error_stack.empty());
+
+	json_error_stack = original_stack;
+}
+#endif
 
 using save_void_t = save_data_t<void, UINT_MAX>;
 
@@ -208,8 +387,9 @@ struct save_type_t {
 	bool				 never_empty = false;	  // this should be persisted even if all empty
 	bool (*is_empty)(const void *data) = nullptr; // override default check
 
-	void (*read)(void *data, const Json::Value &json, const char *field) = nullptr; // for custom reading
-	bool (*write)(const void *data, bool null_for_empty, Json::Value &output) = nullptr; // for custom writing
+void (*read)(void *data, const Json::Value &json, const char *field) = nullptr; // for custom reading
+bool (*write)(const void *data, bool null_for_empty, Json::Value &output) = nullptr; // for custom writing
+const char *(*string_resolver)(const char *value) = nullptr;
 };
 
 struct save_field_t {
@@ -225,10 +405,10 @@ struct save_field_t {
 };
 
 struct save_struct_t {
-	const char *name;
-	const std::initializer_list<save_field_t> fields; // field list
+const char *name;
+const std::initializer_list<save_field_t> fields; // field list
 
-	std::string debug() const {
+std::string debug() const {
 		std::stringstream s;
 
 		for (auto &field : fields)
@@ -236,8 +416,53 @@ struct save_struct_t {
 			<< field.type.count << '\n';
 
 		return s.str();
-	}
+}
 };
+
+static std::unordered_map<std::string, const char *> classname_constants;
+
+/*
+=============
+InitClassnameConstants
+
+Builds a mapping of known classnames to their canonical pointers.
+=============
+*/
+static void InitClassnameConstants() {
+	if (!classname_constants.empty())
+		return;
+
+	for (const char *classname : G_GetSpawnClassnameConstants())
+		classname_constants.emplace(classname, classname);
+
+	for (item_id_t i = static_cast<item_id_t>(IT_NULL + 1); i < IT_TOTAL; i = static_cast<item_id_t>(i + 1)) {
+		const gitem_t *item = GetItemByIndex(i);
+
+		if (item && item->classname)
+			classname_constants.emplace(item->classname, item->classname);
+	}
+}
+
+/*
+=============
+Save_ResolveClassname
+
+Returns the canonical classname pointer for persisted entities.
+=============
+*/
+static const char *Save_ResolveClassname(const char *classname) {
+	if (!classname)
+		return nullptr;
+
+	InitClassnameConstants();
+
+	auto classname_it = classname_constants.find(classname);
+
+	if (classname_it != classname_constants.end())
+		return classname_it->second;
+
+	return nullptr;
+}
 
 // field header macro
 #define SAVE_FIELD(n, f) #f, offsetof(n, f)
@@ -560,6 +785,14 @@ struct save_type_deducer<std::bitset<N>> {
 		}                                                                                                              \
 	}
 
+#define FIELD_CLASSNAME(f)                                                                                             \
+	{                                                                                                                  \
+		FIELD(f),                                                                                                      \
+		{                                                                                                              \
+			ST_STRING, TAG_LEVEL, 0, nullptr, nullptr, false, nullptr, nullptr, nullptr, Save_ResolveClassname         \
+		}                                                                                                              \
+	}
+
 // macro for creating save type deducer for
 // specified struct type
 #define MAKE_STRUCT_SAVE_DEDUCER(t)  \
@@ -644,6 +877,7 @@ FIELD_AUTO(killed_monsters),
 FIELD_AUTO(body_que),
 
 FIELD_AUTO(power_cubes),
+FIELD_AUTO(steam_effect_next_id),
 
 FIELD_AUTO(disguise_violator),
 FIELD_AUTO(disguise_violation_time),
@@ -919,7 +1153,7 @@ FIELD_LEVEL_STRING(model),
 FIELD_AUTO(freetime),
 
 FIELD_LEVEL_STRING(message),
-FIELD_LEVEL_STRING(classname), // FIXME: should allow loading from constants
+FIELD_CLASSNAME(classname),
 FIELD_AUTO(spawnflags),
 
 FIELD_AUTO(timestamp),
@@ -1453,6 +1687,15 @@ void read_save_type_json(const Json::Value &json, void *data, const save_type_t 
 			if (type->count && strlen(json.asCString()) >= type->count)
 				json_print_error(field, "static-length dynamic string overrun", false);
 			else {
+				if (type->string_resolver) {
+					const char *resolved = type->string_resolver(json.asCString());
+
+					if (resolved) {
+						*((const char **)data) = resolved;
+						return;
+					}
+				}
+
 				size_t len = strlen(json.asCString());
 				size_t alloc_size = type->count ? type->count : (len + 1);
 				char *str = *((char **)data) = (char *)gi.TagMalloc(alloc_size, type->tag);
@@ -1572,9 +1815,8 @@ void read_save_type_json(const Json::Value &json, void *data, const save_type_t 
 		return;
 	case ST_STRUCT:
 		if (!json.isNull()) {
-			json_push_stack(field);
+			json_stack_segment stack_guard(field);
 			read_save_struct_json(json, data, type->structure);
-			json_pop_stack();
 		}
 		return;
 	case ST_ENTITY:
@@ -1649,18 +1891,16 @@ void read_save_type_json(const Json::Value &json, void *data, const save_type_t 
 				const Json::Value &value = *it;
 
 				if (!value.isInt()) {
-					json_push_stack(classname);
+					json_stack_segment stack_guard(classname);
 					json_print_error(field, "expected integer", false);
-					json_pop_stack();
 					continue;
 				}
 
 				gitem_t *item = FindItemByClassname(classname);
 
 				if (!item) {
-					json_push_stack(classname);
+					json_stack_segment stack_guard(classname);
 					json_print_error(field, G_Fmt("can't find item {}", classname).data(), false);
-					json_pop_stack();
 					continue;
 				}
 
@@ -1684,45 +1924,39 @@ void read_save_type_json(const Json::Value &json, void *data, const save_type_t 
 				const Json::Value &value = json[i];
 
 				if (!value.isObject()) {
-					json_push_stack(fmt::format("{}", i));
+					json_stack_segment stack_guard(fmt::format("{}", i));
 					json_print_error(field, "expected object", false);
-					json_pop_stack();
 					continue;
 				}
 
 				// quick type checks
 
 				if (!value["classname"].isString()) {
-					json_push_stack(fmt::format("{}.classname", i));
+					json_stack_segment stack_guard(fmt::format("{}.classname", i));
 					json_print_error(field, "expected string", false);
-					json_pop_stack();
 					continue;
 				}
 
 				if (!value["mins"].isArray() || value["mins"].size() != 3) {
-					json_push_stack(fmt::format("{}.mins", i));
+					json_stack_segment stack_guard(fmt::format("{}.mins", i));
 					json_print_error(field, "expected array[3]", false);
-					json_pop_stack();
 					continue;
 				}
 
 				if (!value["maxs"].isArray() || value["maxs"].size() != 3) {
-					json_push_stack(fmt::format("{}.maxs", i));
+					json_stack_segment stack_guard(fmt::format("{}.maxs", i));
 					json_print_error(field, "expected array[3]", false);
-					json_pop_stack();
 					continue;
 				}
 
 				if (!value["strength"].isInt()) {
-					json_push_stack(fmt::format("{}.strength", i));
+					json_stack_segment stack_guard(fmt::format("{}.strength", i));
 					json_print_error(field, "expected int", false);
-					json_pop_stack();
 					continue;
 				}
 
 				p->classname = G_CopyString(value["classname"].asCString(), TAG_LEVEL);
 				p->strength = value["strength"].asInt();
-
 				for (int32_t x = 0; x < 3; x++) {
 					p->mins[x] = value["mins"][x].asInt();
 					p->maxs[x] = value["maxs"][x].asInt();
@@ -2171,6 +2405,13 @@ void read_save_struct_json(const Json::Value &json, void *data, const save_struc
 #include <fstream>
 #include <memory>
 
+/*
+=============
+parseJson
+
+Parses a JSON string into a Json::Value and errors on failure.
+=============
+*/
 static Json::Value parseJson(const char *jsonString) {
 	Json::CharReaderBuilder reader;
 	reader["allowSpecialFloats"] = true;
@@ -2187,12 +2428,19 @@ static Json::Value parseJson(const char *jsonString) {
 	return json;
 }
 
+/*
+=============
+saveJson
+
+Serializes a Json::Value to a TagMalloc'ed string buffer.
+=============
+*/
 static char *saveJson(const Json::Value &json, size_t *out_size) {
 	Json::StreamWriterBuilder builder;
 	builder["indentation"] = "\t";
 	builder["useSpecialFloats"] = true;
 	const std::unique_ptr<Json::StreamWriter> writer(builder.newStreamWriter());
-	std::stringstream						  ss(std::ios_base::out | std::ios_base::binary);
+	std::stringstream ss(std::ios_base::out | std::ios_base::binary);
 	writer->write(json, &ss);
 	*out_size = ss.tellp();
 	char *const out = static_cast<char *>(gi.TagMalloc(*out_size + 1, TAG_GAME));
@@ -2203,8 +2451,13 @@ static char *saveJson(const Json::Value &json, size_t *out_size) {
 	return out;
 }
 
-// new entry point for WriteGame.
-// returns pointer to TagMalloc'd JSON string.
+/*
+=============
+WriteGameJson
+
+Serializes the current game state to TagMalloc'd JSON data.
+=============
+*/
 char *WriteGameJson(bool autosave, size_t *out_size) {
 	if (!autosave)
 		SaveClientData();
@@ -2212,7 +2465,7 @@ char *WriteGameJson(bool autosave, size_t *out_size) {
 	Json::Value json(Json::objectValue);
 
 	json["save_version"] = SAVE_FORMAT_VERSION;
-	// TODO: engine version ID?
+	json["engine_version"] = GetEngineBuildString();
 
 	// write game
 	game.autosaved = autosave;
@@ -2233,13 +2486,51 @@ char *WriteGameJson(bool autosave, size_t *out_size) {
 
 void PrecacheInventoryItems();
 
-// new entry point for ReadGame.
-// takes in pointer to JSON data. does
-// not store or modify it.
+/*
+=============
+ValidateEngineVersion
+
+Validates the engine version recorded in the save JSON and warns or aborts on mismatches.
+=============
+*/
+static void ValidateEngineVersion(const Json::Value &json) {
+	const Json::Value &engine_version_json = json["engine_version"];
+	const char *current_engine_version = GetEngineBuildString();
+
+	if (!engine_version_json.isString()) {
+		if (g_strict_saves->integer)
+			gi.Com_Error("expected \"engine_version\" to be string");
+		else
+			gi.Com_Print("warning: save file missing engine version info; continuing load anyway.\n");
+
+		return;
+	}
+
+	const std::string save_engine_version = engine_version_json.asString();
+	const char *actual_engine_version = (current_engine_version && current_engine_version[0]) ? current_engine_version : "<unknown>";
+
+	if (save_engine_version != actual_engine_version) {
+		const std::string warning = fmt::format("Save was created with engine version \"{}\" but current engine is \"{}\".", save_engine_version, actual_engine_version);
+
+		if (g_strict_saves->integer)
+			gi.Com_Error(warning.c_str());
+		else
+			gi.Com_PrintFmt("{}\n", warning);
+	}
+}
+
+/*
+=============
+ReadGameJson
+
+Loads game state from JSON data and restores entities and clients.
+=============
+*/
 void ReadGameJson(const char *jsonString) {
 	gi.FreeTags(TAG_GAME);
 
 	Json::Value json = parseJson(jsonString);
+	ValidateEngineVersion(json);
 
 	uint32_t max_entities = game.maxentities;
 	uint32_t max_clients = game.maxclients;
@@ -2250,9 +2541,8 @@ void ReadGameJson(const char *jsonString) {
 	globals.gentities = g_entities;
 
 	// read game
-	json_push_stack("game");
+	json_stack_segment game_stack("game");
 	read_save_struct_json(json["game"], &game, &game_locals_t_savestruct);
-	json_pop_stack();
 
 	// read clients
 	const Json::Value &clients = json["clients"];
@@ -2265,16 +2555,20 @@ void ReadGameJson(const char *jsonString) {
 	size_t i = 0;
 
 	for (auto &v : clients) {
-		json_push_stack(fmt::format("clients[{}]", i));
+		json_stack_segment stack_guard(fmt::format("clients[{}]", i));
 		read_save_struct_json(v, &game.clients[i++], &gclient_t_savestruct);
-		json_pop_stack();
 	}
 
 	PrecacheInventoryItems();
 }
 
-// new entry point for WriteLevel.
-// returns pointer to TagMalloc'd JSON string.
+/*
+=============
+WriteLevelJson
+
+Serializes the current level state to TagMalloc'd JSON data.
+=============
+*/
 char *WriteLevelJson(bool transition, size_t *out_size) {
 	// update current level entry now, just so we can
 	// use gamemap to test EOU
@@ -2289,7 +2583,7 @@ char *WriteLevelJson(bool transition, size_t *out_size) {
 
 	// write entities
 	Json::Value entities(Json::objectValue);
-	char		number[16];
+	char			number[16];
 
 	for (size_t i = 0; i < globals.num_entities; i++) {
 		if (!globals.gentities[i].inuse)
@@ -2315,9 +2609,13 @@ char *WriteLevelJson(bool transition, size_t *out_size) {
 	return saveJson(json, out_size);
 }
 
-// new entry point for ReadLevel.
-// takes in pointer to JSON data. does
-// not store or modify it.
+/*
+=============
+ReadLevelJson
+
+Loads level state from JSON data and repopulates entities.
+=============
+*/
 void ReadLevelJson(const char *jsonString) {
 	// free any dynamic memory allocated by loading the level
 	// base state
@@ -2330,9 +2628,8 @@ void ReadLevelJson(const char *jsonString) {
 	globals.num_entities = game.maxclients + 1;
 
 	// read level
-	json_push_stack("level");
+	json_stack_segment level_stack("level");
 	read_save_struct_json(json["level"], &level, &level_locals_t_savestruct);
-	json_pop_stack();
 
 	// read entities
 	const Json::Value &entities = json["entities"];
@@ -2345,16 +2642,15 @@ void ReadLevelJson(const char *jsonString) {
 		const char *dummy;
 		const char *id = it.memberName(&dummy);
 		const Json::Value &value = *it;//json[key];
-		uint32_t		   number = strtoul(id, nullptr, 10);
+		uint32_t			number = strtoul(id, nullptr, 10);
 
 		if (number >= globals.num_entities)
 			globals.num_entities = number + 1;
 
 		gentity_t *ent = &g_entities[number];
 		G_InitGentity(ent);
-		json_push_stack(fmt::format("entities[{}]", number));
+		json_stack_segment stack_guard(fmt::format("entities[{}]", number));
 		read_save_struct_json(value, ent, &gentity_t_savestruct);
-		json_pop_stack();
 		gi.linkentity(ent);
 	}
 

@@ -6,11 +6,13 @@
 
 #include "bg_local.h"
 
+#include <vector>
+
 // the "gameversion" client command will print this plus compile date
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.00";
+constexpr const char *GAMEMOD_VERSION = "0.21.01";
 
 //==================================================================
 
@@ -829,8 +831,9 @@ struct save_data_list_t {
 	save_data_tag_t			tag;
 	const void *ptr; // pointer to raw data
 	const save_data_list_t *next; // next in list
+	bool		valid;
 
-	save_data_list_t(const char *name, save_data_tag_t tag, const void *ptr);
+	save_data_list_t(const char *name, save_data_tag_t tag, const void *ptr, bool link = true, bool valid = true);
 
 	static const save_data_list_t *fetch(const void *link_ptr, save_data_tag_t tag);
 };
@@ -859,12 +862,16 @@ public:
 		save_data_t() {}
 
 	constexpr save_data_t(const save_data_list_t *list_in) :
-		value(list_in->ptr),
+		value(list_in && list_in->valid ? list_in->ptr : nullptr),
 		list(list_in) {}
 
 	inline save_data_t(value_type ptr_in) :
 		value(ptr_in),
-		list(ptr_in ? save_data_list_t::fetch(reinterpret_cast<const void *>(ptr_in), static_cast<save_data_tag_t>(Tag)) : nullptr) {}
+		list(ptr_in ? save_data_list_t::fetch(reinterpret_cast<const void *>(ptr_in), static_cast<save_data_tag_t>(Tag)) : nullptr) {
+		if (list && !list->valid)
+			value = nullptr;
+	}
+
 
 	inline save_data_t(const save_data_t<T, Tag> &ref_in) :
 		save_data_t(ref_in.value) {}
@@ -873,6 +880,9 @@ public:
 		if (value != ptr_in) {
 			value = ptr_in;
 			list = value ? save_data_list_t::fetch(reinterpret_cast<const void *>(ptr_in), static_cast<save_data_tag_t>(Tag)) : nullptr;
+
+			if (list && !list->valid)
+				value = nullptr;
 		}
 
 		return *this;
@@ -880,7 +890,7 @@ public:
 
 	constexpr const value_type pointer() const { return value; }
 	constexpr const save_data_list_t *save_list() const { return list; }
-	constexpr const char *name() const { return value ? list->name : "null"; }
+	constexpr const char *name() const { return list ? list->name : "null"; }
 	constexpr const value_type operator->() const { return value; }
 	constexpr explicit operator bool() const { return value; }
 	constexpr bool operator==(value_type ptr_in) const { return value == ptr_in; }
@@ -1293,6 +1303,7 @@ struct gitem_t {
 
 	int32_t			sort_id = 0; // used by some items to control their sorting
 	int32_t			quantity_warn = 5; // when to warn on low ammo
+	int32_t			quantity_max = 0; // maximum quantity a holdable can stack to (0 = use fallback)
 
 	// set in InitItems, don't set by hand
 	// circular list of chained weapons
@@ -1444,6 +1455,7 @@ struct game_locals_t {
 
 	gametype_t	gametype;
 	std::string motd;
+	char *motd_buffer = nullptr;
 	int motd_mod_count = 0;
 
 	ruleset_t	ruleset;
@@ -1561,6 +1573,7 @@ struct level_locals_t {
 	int32_t		body_que;		 // dead bodies
 
 	int32_t		power_cubes; // ugly necessity for coop
+	int32_t		steam_effect_next_id;
 
 	gentity_t	*disguise_violator;
 	gtime_t		disguise_violation_time;
@@ -2382,6 +2395,7 @@ extern cvar_t *g_coop_health_scaling;
 extern cvar_t *g_coop_instanced_items;
 extern cvar_t *g_coop_num_lives;
 extern cvar_t *g_coop_player_collision;
+extern cvar_t *g_horde_num_lives;
 extern cvar_t *g_coop_squad_respawn;
 extern cvar_t *g_corpse_sink_time;
 extern cvar_t *g_damage_scale;
@@ -2400,6 +2414,7 @@ extern cvar_t *g_dm_force_join;
 extern cvar_t *g_dm_force_respawn;
 extern cvar_t *g_dm_force_respawn_time;
 extern cvar_t *g_dm_holdable_adrenaline;
+extern cvar_t *g_dm_holdable_doppel_max;
 extern cvar_t *g_dm_instant_items;
 extern cvar_t *g_dm_intermission_shots;
 extern cvar_t *g_dm_item_respawn_rate;
@@ -2531,6 +2546,7 @@ team_t PickTeam(int ignoreClientNum);
 void BroadcastTeamChange(gentity_t *ent, int old_team, bool inactive, bool silent);
 bool AllowClientTeamSwitch(gentity_t *ent);
 int TeamBalance(bool force);
+void ProcessBalanceQueue(void);
 void Cmd_ReadyUp_f(gentity_t *ent);
 
 void VoteCommandStore(gentity_t *ent);
@@ -2673,6 +2689,7 @@ void G_StuffCmd(gentity_t *e, const char *fmt, ...);
 //
 // g_spawn.cpp
 //
+const std::vector<const char *> &G_GetSpawnClassnameConstants();
 void  ED_CallSpawn(gentity_t *ent);
 char *ED_NewString(char *string);
 void GT_SetLongName(void);
@@ -2775,7 +2792,7 @@ void monster_fire_bfg(gentity_t *self, const vec3_t &start, const vec3_t &aimdir
 bool M_CheckClearShot(gentity_t *self, const vec3_t &offset);
 bool M_CheckClearShot(gentity_t *self, const vec3_t &offset, vec3_t &start);
 vec3_t M_ProjectFlashSource(gentity_t *self, const vec3_t &offset, const vec3_t &forward, const vec3_t &right);
-bool M_droptofloor_generic(vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, bool ceiling, gentity_t *ignore, contents_t mask, bool allow_partial);
+bool M_droptofloor_generic(vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, const vec3_t &gravityVector, gentity_t *ignore, contents_t mask, bool allow_partial);
 bool M_droptofloor(gentity_t *ent);
 void monster_think(gentity_t *self);
 void monster_dead_think(gentity_t *self);
@@ -2994,6 +3011,16 @@ void ClientBeginServerFrame(gentity_t *ent);
 void ClientUserinfoChanged(gentity_t *ent, const char *userinfo);
 void Match_Ghost_Assign(gentity_t *ent);
 void Match_Ghost_DoAssign(gentity_t *ent);
+
+struct player_life_state_t {
+	bool		playing;
+	bool		eliminated;
+	int32_t	health;
+	int32_t	lives;
+};
+
+bool Horde_LivesEnabled();
+bool Horde_NoLivesRemain(const std::vector<player_life_state_t> &states);
 void P_AssignClientSkinnum(gentity_t *ent);
 void P_ForceFogTransition(gentity_t *ent, bool instant);
 void P_SendLevelPOI(gentity_t *ent);
@@ -3098,8 +3125,8 @@ extern byte damage_multiplier;
 //
 // m_move.cpp
 //
-bool M_CheckBottom_Fast_Generic(const vec3_t &absmins, const vec3_t &absmaxs, bool ceiling);
-bool M_CheckBottom_Slow_Generic(const vec3_t &origin, const vec3_t &absmins, const vec3_t &absmaxs, gentity_t *ignore, contents_t mask, bool ceiling, bool allow_any_step_height);
+bool M_CheckBottom_Fast_Generic(const vec3_t &absmins, const vec3_t &absmaxs, const vec3_t &gravityVector);
+bool M_CheckBottom_Slow_Generic(const vec3_t &origin, const vec3_t &absmins, const vec3_t &absmaxs, gentity_t *ignore, contents_t mask, const vec3_t &gravityVector, bool allow_any_step_height);
 bool M_CheckBottom(gentity_t *ent);
 bool G_CloseEnough(gentity_t *ent, gentity_t *goal, float dist);
 bool M_walkmove(gentity_t *ent, float yaw, float dist);
@@ -3152,7 +3179,11 @@ bool InAMatch();
 void ChangeGametype(gametype_t gt);
 void GT_Changes();
 void SpawnEntities(const char *mapname, const char *entities, const char *spawnpoint);
+void ClearWorldEntities();
+void G_SaveLevelEntstring();
+bool G_ResetLevelFromSavedEntstring();
 void G_LoadMOTD();
+bool G_IsAdminSocialId(const char *social_id);
 
 //
 // g_chase.cpp
@@ -3214,11 +3245,12 @@ gentity_t *CreateFlyMonster(const vec3_t &origin, const vec3_t &angles, const ve
 	const char *classname);
 gentity_t *CreateGroundMonster(const vec3_t &origin, const vec3_t &angles, const vec3_t &mins, const vec3_t &maxs,
 	const char *classname, float height);
-bool	 FindSpawnPoint(const vec3_t &startpoint, const vec3_t &mins, const vec3_t &maxs, vec3_t &spawnpoint,
-	float maxMoveUp, bool drop = true);
-bool	 CheckSpawnPoint(const vec3_t &origin, const vec3_t &mins, const vec3_t &maxs);
-bool	 CheckGroundSpawnPoint(const vec3_t &origin, const vec3_t &entMins, const vec3_t &entMaxs, float height,
-	float gravity);
+bool     FindSpawnPoint(const vec3_t &startpoint, const vec3_t &mins, const vec3_t &maxs, vec3_t &spawnpoint,
+	float maxMoveUp, bool drop = true, const vec3_t &gravityVector = { 0.0f, 0.0f, -1.0f });
+bool     CheckSpawnPoint(const vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, const vec3_t &gravityVector = { 0.0f, 0.0f, -1.0f });
+bool     SpawnCheckAndDropToFloor(vec3_t &origin, const vec3_t &mins, const vec3_t &maxs, const vec3_t &gravityVector = { 0.0f, 0.0f, -1.0f });
+bool     CheckGroundSpawnPoint(const vec3_t &origin, const vec3_t &entMins, const vec3_t &entMaxs, float height,
+	const vec3_t &gravityVector = { 0.0f, 0.0f, -1.0f });
 void	 SpawnGrow_Spawn(const vec3_t &startpos, float start_size, float end_size);
 void	 Widowlegs_Spawn(const vec3_t &startpos, const vec3_t &angles);
 
@@ -3592,6 +3624,7 @@ struct gclient_t {
 	bool			anim_duck;
 	bool			anim_run;
 	gtime_t			anim_time;
+	int32_t			pain_anim_index;
 
 	// powerup timers
 	gtime_t pu_time_quad;
