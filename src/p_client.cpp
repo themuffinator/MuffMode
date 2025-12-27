@@ -353,6 +353,7 @@ static const char *MonsterName(const char *classname) {
 		if (!Q_strncasecmp(classname, monname[i].classname, strlen(classname)))
 			return monname[i].longname;
 	}
+	return nullptr;
 }
 
 static bool IsVowel(const char c) {
