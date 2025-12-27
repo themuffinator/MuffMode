@@ -2447,7 +2447,7 @@ extern cvar_t *g_ladder_steps;
 extern cvar_t *g_lag_compensation;
 extern cvar_t *g_map_list;
 extern cvar_t *g_map_list_shuffle;
-extern cvar_t *g_map_shuffle_once;
+extern cvar_t *g_map_list_shuffle_once;
 extern cvar_t *g_map_pool;
 extern cvar_t *g_match_lock;
 extern cvar_t *g_matchstats;
