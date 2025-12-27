@@ -254,6 +254,7 @@ Use **callvote [command] [arg]** for the below listed vote commands:
  - **g_knockback_scale**: scales all knockback resulting from damage received (default 1.0)
  - **g_ladder_steps**: Allow ladder step sounds, 1 = only in campaigns, 2 = always on (default 1)
  - **g_match_lock**: when set to 1, prohibits joining the match while in progress (default 0)
+ - **g_map_list_shuffle_once**: when set to 1, shuffles the map list once at server startup, then cycles through maps in that order without re-shuffling. This differs from g_map_list_shuffle which re-shuffles on every map cycle. (default: 0)
  - **g_motd_filename**: points to filename of message of the day file, reverts to default when blank (default motd.txt)
  - **g_mover_speed_scale**: sets speed scaling factor for all movers in maps (doors, rotators, lifts etc.) (default: 1.0f)
  - **g_no_powerups**: disable powerup pickups (Quad, Protection, Double, Haste, Invisibility, etc.)
