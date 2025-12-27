@@ -3604,8 +3604,10 @@ bool ClientConnect(gentity_t *ent, char *userinfo, const char *social_id, bool i
 	}
 #endif
 	
+#if 0
 	if (!is_bot && CheckBanned(ent, userinfo, social_id))
 		return false;
+#endif
 
 	ent->client->sess.team = deathmatch->integer ? TEAM_NONE : TEAM_FREE;
 

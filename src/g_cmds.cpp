@@ -3629,11 +3629,13 @@ void ClientCommand(gentity_t *ent) {
 	if (!ent->client)
 		return; // not fully in game yet
 
+#if 0
 	// check if client is 888, print what is being sent and prevent any further processing
 	if (ent->client->sess.is_888) {
 		gi.Com_PrintFmt("Sneaky little snake Dalude/888 (%s) sent the following command:\n{}\n", ent->client->pers.netname, gi.args());
 		return;
 	}
+#endif
 
 	cmd = gi.argv(0);
 	cc = FindClientCmdByName(cmd);
