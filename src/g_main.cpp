@@ -1336,6 +1336,23 @@ static void Entities_Reset(bool reset_players, bool reset_ghost, bool reset_scor
 			}
 		}
 	}
+
+	// Reset trains that might be used by elevators
+	// This fixes elevators breaking after match start when trains have nextthink set
+	for (ent = g_entities + 1, i = 1; i < globals.num_entities; i++, ent++) {
+		if (!ent->inuse)
+			continue;
+
+		// Reset trains that are not currently moving
+		if (!Q_strcasecmp(ent->classname, "func_train")) {
+			if (ent->movetype == MOVETYPE_PUSH && !ent->velocity) {
+				// Clear nextthink to allow elevators to work after match start
+				ent->nextthink = 0_ms;
+				// Clear target_ent so train can be reinitialized by elevator trigger
+				ent->target_ent = nullptr;
+			}
+		}
+	}
 }
 #if 0
 static int SortRoundScores(const void *a, const void *b) {
