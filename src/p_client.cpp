@@ -6,6 +6,8 @@
 
 void SP_misc_teleporter_dest(gentity_t *ent);
 
+static bool ShouldShowRampageMessages();
+
 static THINK(info_player_start_drop) (gentity_t *self) -> void {
 	// allow them to drop
 	self->solid = SOLID_TRIGGER;
@@ -665,13 +667,17 @@ static void ClientObituary(gentity_t *self, gentity_t *inflictor, gentity_t *att
 				if (level.match_state == matchst_t::MATCH_WARMUP_READYUP) {
 					BroadcastReadyReminderMessage();
 				} else if (attacker->client->resp.kill_count && !(attacker->client->resp.kill_count % 10)) {
-					gi.LocBroadcast_Print(PRINT_CENTER, "{} is on a rampage\nwith {} frags!", attacker->client->resp.netname, attacker->client->resp.kill_count);
-					AnnouncerSound(attacker, "rampage1", nullptr, false);
-					attacker->client->pers.medal_time = level.time;
-					attacker->client->pers.medal_type = MEDAL_RAMPAGE;
-					attacker->client->pers.medal_count[MEDAL_RAMPAGE]++;
+					if (ShouldShowRampageMessages()) {
+						gi.LocBroadcast_Print(PRINT_CENTER, "{} is on a rampage\nwith {} frags!", attacker->client->resp.netname, attacker->client->resp.kill_count);
+						AnnouncerSound(attacker, "rampage1", nullptr, false);
+						attacker->client->pers.medal_time = level.time;
+						attacker->client->pers.medal_type = MEDAL_RAMPAGE;
+						attacker->client->pers.medal_count[MEDAL_RAMPAGE]++;
+					}
 				} else if (kill_count >= 10) {
-					gi.LocBroadcast_Print(PRINT_CENTER, "{} put an end to {}'s\nrampage!", attacker->client->resp.netname, self->client->resp.netname);
+					if (ShouldShowRampageMessages()) {
+						gi.LocBroadcast_Print(PRINT_CENTER, "{} put an end to {}'s\nrampage!", attacker->client->resp.netname, self->client->resp.netname);
+					}
 				} else if (Teams() || level.match_state != matchst_t::MATCH_IN_PROGRESS) {
 					if (attacker->client->sess.pc.show_fragmessages)
 						gi.LocClient_Print(attacker, PRINT_CENTER, "You {} {}", GT(GT_FREEZE) ? "froze" : "fragged", self->client->resp.netname);
@@ -921,6 +927,35 @@ static bool Match_CanScore() {
 		return false;
 	}
 
+	return true;
+}
+
+/*
+==================
+ShouldShowRampageMessages
+==================
+Helper function to check if rampage messages should be shown.
+0 = disabled for all gametypes
+1 = defaults (enabled for FFA, disabled for TDM/CTF)
+2 = enabled for all gametypes
+==================
+*/
+static bool ShouldShowRampageMessages() {
+	int value = g_frag_messages->integer;
+	
+	if (value == 0)
+		return false;  // Disabled for all gametypes
+	if (value == 2)
+		return true;   // Enabled for all gametypes
+	
+	// value == 1: Use gametype-specific defaults
+	// Enabled for FFA, disabled for TDM/CTF
+	if (GT(GT_FFA))
+		return true;
+	if (GT(GT_TDM) || GT(GT_CTF))
+		return false;
+	
+	// For other gametypes, default to enabled
 	return true;
 }
 

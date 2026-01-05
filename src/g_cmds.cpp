@@ -702,6 +702,29 @@ static void Cmd_Drop_f(gentity_t *ent) {
 
 	s = gi.args();
 
+	// Handle special cases first, before item lookup
+	if (!Q_strcasecmp(s, "tech")) {
+		it = Tech_Held(ent);
+
+		if (it) {
+			it->drop(ent, it);
+			ValidateSelectedItem(ent);
+		}
+
+		return;
+	}
+
+	if (!Q_strcasecmp(s, "weapon")) {
+		it = ent->client->pers.weapon;
+
+		if (it) {
+			it->drop(ent, it);
+			ValidateSelectedItem(ent);
+		}
+
+		return;
+	}
+
 	const char *cmd = gi.argv(0);
 
 	if (!Q_strcasecmp(cmd, "drop_index")) {
@@ -743,28 +766,6 @@ static void Cmd_Drop_f(gentity_t *ent) {
 	index = it->id;
 	if (!ent->client->pers.inventory[index]) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "$g_out_of_item", it->pickup_name);
-		return;
-	}
-
-	if (!Q_strcasecmp(gi.args(), "tech")) {
-		it = Tech_Held(ent);
-
-		if (it) {
-			it->drop(ent, it);
-			ValidateSelectedItem(ent);
-		}
-
-		return;
-	}
-
-	if (!Q_strcasecmp(gi.args(), "weapon")) {
-		it = ent->client->pers.weapon;
-
-		if (it) {
-			it->drop(ent, it);
-			ValidateSelectedItem(ent);
-		}
-
 		return;
 	}
 
