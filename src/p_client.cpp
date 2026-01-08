@@ -3972,7 +3972,7 @@ static bool ClientInactivityTimer(gentity_t *ent) {
 		// gameplay, everyone isn't kicked
 		ent->client->sess.inactivity_time = level.time + 1_min;
 		ent->client->sess.inactivity_warning = false;
-	} else if (ent->client->latched_buttons & BUTTON_ANY) {
+	} else if (ent->client->latched_buttons) {
 		ent->client->sess.inactivity_time = level.time + cv;
 		ent->client->sess.inactivity_warning = false;
 	} else {
