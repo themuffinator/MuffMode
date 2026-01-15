@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.09";
+constexpr const char *GAMEMOD_VERSION = "0.21.12";
 
 //==================================================================
 
@@ -1660,6 +1660,7 @@ struct level_locals_t {
 
 	gtime_t		countdown_check;
 	gtime_t		matchendwarn_check;
+	gtime_t		match_cancel_delay_timer;	// delay before cancelling match due to too few players
 
 	int			round_number;
 	roundst_t	round_state;
@@ -2463,6 +2464,8 @@ extern cvar_t *g_no_mines;
 extern cvar_t *g_no_nukes;
 extern cvar_t *g_no_powerups;
 extern cvar_t *g_no_spheres;
+extern cvar_t *g_mapspawn_no_bfg;
+extern cvar_t *g_mapspawn_no_plasmabeam;
 extern cvar_t *g_owner_auto_join;
 extern cvar_t *g_owner_push_scores;
 extern cvar_t *g_gametype_cfg;
@@ -3965,6 +3968,10 @@ struct gentity_t {
 	const char *not_ruleset;
 	const char *powerups_on;
 	const char *powerups_off;
+	const char *bfg_on;
+	const char *bfg_off;
+	const char *plasmabeam_on;
+	const char *plasmabeam_off;
 
 	gvec3_t		origin2;
 

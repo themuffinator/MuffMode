@@ -864,6 +864,10 @@ static const std::initializer_list<field_t> entity_fields = {
 	FIELD_AUTO(not_ruleset),
 	FIELD_AUTO(powerups_on),
 	FIELD_AUTO(powerups_off),
+	FIELD_AUTO(bfg_on),
+	FIELD_AUTO(bfg_off),
+	FIELD_AUTO(plasmabeam_on),
+	FIELD_AUTO(plasmabeam_off),
 //-muff
 
 	FIELD_AUTO_NAMED("monster_slots", monsterinfo.monster_slots)
@@ -1191,6 +1195,16 @@ static inline bool G_InhibitEntity(gentity_t *ent) {
 	if (ent->powerups_on && g_no_powerups->integer)
 		return true;
 	if (ent->powerups_off && !g_no_powerups->integer)
+		return true;
+
+	if (ent->bfg_on && g_mapspawn_no_bfg->integer)
+		return true;
+	if (ent->bfg_off && !g_mapspawn_no_bfg->integer)
+		return true;
+
+	if (ent->plasmabeam_on && g_mapspawn_no_plasmabeam->integer)
+		return true;
+	if (ent->plasmabeam_off && !g_mapspawn_no_plasmabeam->integer)
 		return true;
 
 	if (ent->ruleset) {

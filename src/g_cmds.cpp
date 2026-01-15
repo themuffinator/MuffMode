@@ -2122,7 +2122,9 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 		if (!AllowTeamSwitch(ent, desired_team))
 			return false;
 
-		if (!inactive && ent->client->resp.team_delay_time > level.time) {
+		// Don't rate limit switching TO spectator - allow players to spectate immediately
+		// Only rate limit switches between playing teams
+		if (!inactive && desired_team != TEAM_SPECTATOR && ent->client->resp.team_delay_time > level.time) {
 			gi.LocClient_Print(ent, PRINT_HIGH, "You may not switch teams more than once per 5 seconds.\n");
 			P_Menu_Close(ent);
 			return false;

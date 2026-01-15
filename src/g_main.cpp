@@ -179,6 +179,8 @@ cvar_t *g_no_items;
 cvar_t *g_no_mines;
 cvar_t *g_no_nukes;
 cvar_t *g_no_powerups;
+cvar_t *g_mapspawn_no_bfg;
+cvar_t *g_mapspawn_no_plasmabeam;
 cvar_t *g_no_spheres;
 cvar_t *g_owner_auto_join;
 cvar_t *g_owner_push_scores;
@@ -1030,6 +1032,8 @@ static void InitGame() {
 	g_no_mines = gi.cvar("g_no_mines", "0", CVAR_NOFLAGS);
 	g_no_nukes = gi.cvar("g_no_nukes", "0", CVAR_NOFLAGS);
 	g_no_powerups = gi.cvar("g_no_powerups", "0", CVAR_NOFLAGS);
+	g_mapspawn_no_bfg = gi.cvar("g_no_bfg", "0", CVAR_NOFLAGS);
+	g_mapspawn_no_plasmabeam = gi.cvar("g_no_plasmabeam", "0", CVAR_NOFLAGS);
 	g_no_spheres = gi.cvar("g_no_spheres", "0", CVAR_NOFLAGS);
 	g_quick_weapon_switch = gi.cvar("g_quick_weapon_switch", "1", CVAR_LATCH);
 	g_round_countdown = gi.cvar("g_round_countdown", "10", CVAR_NOFLAGS);
@@ -2099,22 +2103,56 @@ static void CheckDMWarmupState(void) {
 	if (!g_dm_allow_no_humans->integer && !level.num_playing_human_clients)
 		not_enough = true;
 
-	if (not_enough || teams_imba) {
+	if (teams_imba) {
+		// Cancel immediately for team imbalance
+		level.match_cancel_delay_timer = 0_ms;
 		if (level.match_state <= matchst_t::MATCH_COUNTDOWN) {
 			if (level.match_state == matchst_t::MATCH_WARMUP_READYUP)
 				UnReadyAll();
 			else if (level.match_state == matchst_t::MATCH_COUNTDOWN)
-				gi.LocBroadcast_Print(PRINT_CENTER, "Countdown cancelled: {}\n", teams_imba ? "teams are imbalanced" : "not enough players");
+				gi.LocBroadcast_Print(PRINT_CENTER, "Countdown cancelled: teams are imbalanced\n");
 
 			if (level.match_state != matchst_t::MATCH_WARMUP_DEFAULT) {
 				level.match_state = matchst_t::MATCH_WARMUP_DEFAULT;
 				level.match_state_timer = 0_sec;
-				level.warmup_requisite = teams_imba ? warmupreq_t::WARMUP_REQ_BALANCE : warmupreq_t::WARMUP_REQ_MORE_PLAYERS;
+				level.warmup_requisite = warmupreq_t::WARMUP_REQ_BALANCE;
 				level.warmup_notice_time = level.time;
 			}
 		}
 		return; // still waiting for players
 	}
+
+	if (not_enough) {
+		// Add 300ms delay before cancelling to allow bot_minclients to add bots
+		if (level.match_cancel_delay_timer == 0_ms) {
+			level.match_cancel_delay_timer = level.time + 300_ms;
+		}
+
+		// Only cancel after delay has passed
+		if (level.time >= level.match_cancel_delay_timer) {
+			if (level.match_state <= matchst_t::MATCH_COUNTDOWN) {
+				if (level.match_state == matchst_t::MATCH_WARMUP_READYUP)
+					UnReadyAll();
+				else if (level.match_state == matchst_t::MATCH_COUNTDOWN)
+					gi.LocBroadcast_Print(PRINT_CENTER, "Countdown cancelled: not enough players\n");
+
+				if (level.match_state != matchst_t::MATCH_WARMUP_DEFAULT) {
+					level.match_state = matchst_t::MATCH_WARMUP_DEFAULT;
+					level.match_state_timer = 0_sec;
+					level.warmup_requisite = warmupreq_t::WARMUP_REQ_MORE_PLAYERS;
+					level.warmup_notice_time = level.time;
+				}
+			}
+			level.match_cancel_delay_timer = 0_ms; // reset
+			return; // still waiting for players
+		} else {
+			// Still waiting for delay, don't cancel yet
+			return;
+		}
+	}
+
+	// We have enough players - clear the cancellation timer
+	level.match_cancel_delay_timer = 0_ms;
 
 	if (level.match_state == matchst_t::MATCH_WARMUP_DEFAULT) {
 		if (!g_dm_do_readyup->integer)
