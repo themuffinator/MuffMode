@@ -860,13 +860,18 @@ static void G_SetClientEvent(gentity_t *ent) {
 			if (current_client->last_ladder_sound < level.time &&
 				(current_client->last_ladder_pos - ent->s.origin).length() > 48.f) {
 				ent->s.event = EV_LADDER_STEP;
+				// Send positioned sound for spectators
+				gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
 				current_client->last_ladder_pos = ent->s.origin;
 				current_client->last_ladder_sound = level.time + LADDER_SOUND_TIME;
 			}
 		}
 	} else if (ent->groundentity && xyspeed > 225) {
-		if ((int)(current_client->bobtime + bobmove) != bobcycle_run)
+		if ((int)(current_client->bobtime + bobmove) != bobcycle_run) {
 			ent->s.event = EV_FOOTSTEP;
+			// Send positioned sound for spectators
+			gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/step1.wav"), 1, ATTN_NORM, 0);
+		}
 	}
 }
 

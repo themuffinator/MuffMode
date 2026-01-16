@@ -3896,10 +3896,16 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 	int far_min = RS(RS_Q3A) ? 61 : 55;
 
 	if (delta > med_min) {
-		if (delta >= far_min)
+		if (delta >= far_min) {
 			ent->s.event = EV_FALL_FAR;
-		else
+			// Send positioned sound for spectators
+			const char *fall_sound = brandom() ? "*fall1.wav" : "*fall2.wav";
+			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex(fall_sound), 1, ATTN_NORM, 0);
+		} else {
 			ent->s.event = EV_FALL_MEDIUM;
+			// Send positioned sound for spectators
+			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+		}
 		if (!deathmatch->integer || !(g_dm_no_fall_damage->integer || GTF(GTF_ARENA))) {
 			ent->pain_debounce_time = level.time + FRAME_TIME_S; // no normal pain sound
 			if (RS(RS_Q3A))
@@ -3913,8 +3919,11 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 
 			T_Damage(ent, world, world, dir, ent->s.origin, vec3_origin, damage, 0, DAMAGE_NONE, MOD_FALLING);
 		}
-	} else
+	} else {
 		ent->s.event = EV_FALL_SHORT;
+		// Send positioned sound for spectators
+		gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+	}
 
 	// Paril: falling damage noises alert monsters
 	if (ent->health)
@@ -4258,6 +4267,8 @@ void ClientThink(gentity_t *ent, usercmd_t *ucmd) {
 				if (!deathmatch->integer &&
 					client->last_ladder_sound < level.time) {
 					ent->s.event = EV_LADDER_STEP;
+					// Send positioned sound for spectators
+					gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
 					client->last_ladder_sound = level.time + LADDER_SOUND_TIME;
 				}
 			}
