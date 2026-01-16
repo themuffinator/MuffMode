@@ -260,6 +260,7 @@ void FollowNext(gentity_t *ent) {
 
 	ent->client->follow_target = e;
 	ent->client->follow_update = true;
+	ent->client->sess.spectator_state = SPECTATOR_FOLLOW;
 }
 
 void FollowPrev(gentity_t *ent) {
@@ -285,6 +286,7 @@ void FollowPrev(gentity_t *ent) {
 
 	ent->client->follow_target = e;
 	ent->client->follow_update = true;
+	ent->client->sess.spectator_state = SPECTATOR_FOLLOW;
 }
 
 void FollowCycle(gentity_t *ent, int dir) {
@@ -343,6 +345,7 @@ void GetFollowTarget(gentity_t *ent) {
 				continue;
 			ent->client->follow_target = ec;
 			ent->client->follow_update = true;
+			ent->client->sess.spectator_state = SPECTATOR_FOLLOW;
 			UpdateChaseCam(ent);
 			return;
 		}

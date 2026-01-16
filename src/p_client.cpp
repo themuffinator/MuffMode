@@ -2942,6 +2942,9 @@ void ClientSpawn(gentity_t *ent) {
 	}
 	ent->client->ps.stats[STAT_SHOW_STATUSBAR] = 1;
 
+	// ensure playing players are visible (clear SVF_NOCLIENT that may have been set by Entities_Reset)
+	ent->svflags &= ~SVF_NOCLIENT;
+
 	// [Paril-KEX] a bit of a hack, but landmark spawns can sometimes cause
 	// intersecting spawns, so we'll do a sanity check here...
 	if (spawn_from_begin) {
