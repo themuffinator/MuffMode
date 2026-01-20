@@ -670,6 +670,17 @@ static void G_Menu_CallVote(gentity_t *ent, menu_hnd_t *p) {
 /*-----------------------------------------------------------------------*/
 
 static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
+	if (!level.vote_time) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
+		P_Menu_Close(ent);
+		return;
+	}
+
+	if (ent->client->pers.voted != 0) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Vote already cast.\n");
+		return;
+	}
+
 	level.vote_yes++;
 	ent->client->pers.voted = 1;
 
@@ -678,6 +689,17 @@ static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
 }
 
 static void G_Menu_Vote_No(gentity_t *ent, menu_hnd_t *p) {
+	if (!level.vote_time) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
+		P_Menu_Close(ent);
+		return;
+	}
+
+	if (ent->client->pers.voted != 0) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Vote already cast.\n");
+		return;
+	}
+
 	level.vote_no++;
 	ent->client->pers.voted = -1;
 

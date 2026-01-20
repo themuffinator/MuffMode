@@ -2647,6 +2647,7 @@ vcmds_t vote_cmds[] = {
 	{"gametype",			Vote_Val_Gametype,		Vote_Pass_Gametype,		8,		2,	"<ffa|duel|tdm|ctf|ca|ft|horde>",	"changes the current gametype"},
 	{"timelimit",			Vote_Val_Timelimit,		Vote_Pass_Timelimit,	16,		2,	"<0..$>",							"alters the match time limit, 0 for no time limit"},
 	{"scorelimit",			Vote_Val_Scorelimit,	Vote_Pass_Scorelimit,	32,		2,	"<0..$>",							"alters the match score limit, 0 for no score limit"},
+	{"fraglimit",			Vote_Val_Scorelimit,	Vote_Pass_Scorelimit,	32,		2,	"<0..$>",							"alters the match score limit, 0 for no score limit (alias for scorelimit)"},
 	{"shuffle",				Vote_Val_ShuffleTeams,	Vote_Pass_ShuffleTeams,	64,		2,	"",									"shuffles teams"},
 	{"unlagged",			Vote_Val_Unlagged,		Vote_Pass_Unlagged,		128,	2,	"<0/1>",							"enables or disables lag compensation"},
 	{"cointoss",			Vote_Val_None,			Vote_Pass_Cointoss,		256,	1,	"",									"invokes a HEADS or TAILS cointoss"},
@@ -2700,7 +2701,9 @@ void Vote_Passed() {
 		
 		level.vote_time = 0_sec;
 		level.vote_execute_time = 0_sec;
+		level.vote = nullptr;
 		level.vote_client = nullptr;
+		level.vote_arg.clear();
 		return;
 	}
 
@@ -3197,7 +3200,10 @@ static void Cmd_ForceVote_f(gentity_t *ent) {
 	} else {
 		gi.Broadcast_Print(PRINT_HIGH, "[ADMIN]: Failed the vote.\n");
 		level.vote_time = 0_sec;
+		level.vote_execute_time = 0_sec;
+		level.vote = nullptr;
 		level.vote_client = nullptr;
+		level.vote_arg.clear();
 	}
 }
 

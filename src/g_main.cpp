@@ -2280,34 +2280,74 @@ static void CheckVote(void) {
 
 	if (!level.vote_client)
 		return;
+
+	// Validate vote state - if vote pointer is null, clear the vote
+	if (!level.vote) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Vote state invalid, cancelling vote.\n");
+		level.vote_time = 0_sec;
+		level.vote_execute_time = 0_sec;
+		level.vote_client = nullptr;
+		level.vote_arg.clear();
+		return;
+	}
 	
 	// give it a minimum duration
 	if (level.time - level.vote_time < 1_sec)
 		return;
 
+	// Validate vote counts don't exceed voting clients (safety check)
+	int total_votes = level.vote_yes + level.vote_no;
+	if (total_votes > level.num_voting_clients) {
+		// Recalculate votes from actual client states
+		level.vote_yes = 0;
+		level.vote_no = 0;
+		for (auto ec : active_clients()) {
+			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+				continue;
+			if (ec->client->sess.is_a_bot)
+				continue;
+			if (ec->client->pers.voted == 1)
+				level.vote_yes++;
+			else if (ec->client->pers.voted == -1)
+				level.vote_no++;
+		}
+	}
+
 	if (level.time - level.vote_time >= 30_sec) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote timed out.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
+		// Vote timed out - clear all state
+		level.vote_time = 0_sec;
+		level.vote_execute_time = 0_sec;
+		level.vote = nullptr;
+		level.vote_client = nullptr;
+		level.vote_arg.clear();
 	} else {
-		int halfpoint = level.num_voting_clients / 2;
-		if (level.vote_yes > halfpoint) {
+		// Use proper majority calculation: (n+1)/2 for true majority
+		// This ensures: 3 voters need 2, 4 voters need 3, etc.
+		int majority = (level.num_voting_clients + 1) / 2;
+		if (level.vote_yes >= majority) {
 			// execute the command, then remove the vote
 			gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
 			level.vote_execute_time = level.time + 3_sec;
+			// Clear vote_time to stop checking, but KEEP level.vote and level.vote_arg for execution
+			level.vote_time = 0_sec;
 			AnnouncerSound(world, "vote_passed", nullptr, false);
-		} else if (level.vote_no >= halfpoint) {
+		} else if (level.vote_no >= majority) {
 			// same behavior as a timeout
 			gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
 			AnnouncerSound(world, "vote_failed", nullptr, false);
+			// Vote failed - clear all state
+			level.vote_time = 0_sec;
+			level.vote_execute_time = 0_sec;
+			level.vote = nullptr;
+			level.vote_client = nullptr;
+			level.vote_arg.clear();
 		} else {
 			// still waiting for a majority
 			return;
 		}
 	}
-
-	level.vote_time = 0_sec;
-	level.vote = nullptr;
-	level.vote_client = nullptr;
 }
 
 // ----------------
@@ -2809,6 +2849,22 @@ void CalculateRanks() {
 
 	// see if it is time to end the level
 	CheckDMExitRules();
+
+	// Recalculate vote counts if a vote is in progress (players may have joined/left)
+	if (level.vote_time && !level.vote_execute_time) {
+		level.vote_yes = 0;
+		level.vote_no = 0;
+		for (auto ec : active_clients()) {
+			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+				continue;
+			if (ec->client->sess.is_a_bot)
+				continue;
+			if (ec->client->pers.voted == 1)
+				level.vote_yes++;
+			else if (ec->client->pers.voted == -1)
+				level.vote_no++;
+		}
+	}
 }
 
 //===================================================================

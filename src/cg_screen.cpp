@@ -33,8 +33,6 @@ static cvar_t *ui_acc_alttypeface;
 static cvar_t *cl_teamBorder;
 static cvar_t *cl_teamBorderWidth;
 static cvar_t *cl_teamBorderAlpha;
-static cvar_t *cl_teamBorderMode;
-static cvar_t *g_gametype;
 
 // static temp data used for hud
 static struct {
@@ -1720,16 +1718,6 @@ static void CG_DrawTeamBorder(const player_state_t *ps, vrect_t hud_vrect, int32
 	if (ps->team_id != TEAM_RED && ps->team_id != TEAM_BLUE)
 		return;
 
-	// Check game mode filter if enabled
-	if (cl_teamBorderMode->integer > 0) {
-		int gametype = g_gametype ? g_gametype->integer : 0;
-		
-		if (cl_teamBorderMode->integer == 1 && gametype != GT_TDM) // TDM only
-			return;
-		if (cl_teamBorderMode->integer == 2 && gametype != GT_CTF) // CTF only
-			return;
-	}
-
 	// Don't draw if HUD is hidden
 	if (ps->stats[STAT_LAYOUTS] & LAYOUTS_HIDE_HUD)
 		return;
@@ -1750,17 +1738,8 @@ static void CG_DrawTeamBorder(const player_state_t *ps, vrect_t hud_vrect, int32
 	int32_t w = hud_vrect.width * scale;
 	int32_t h = hud_vrect.height * scale;
 
-	// Draw top border
-	cgi.SCR_DrawColorPic(x, y, w, border_width, "_white", border_color);
-
-	// Draw bottom border
+	// Draw bottom border only
 	cgi.SCR_DrawColorPic(x, y + h - border_width, w, border_width, "_white", border_color);
-
-	// Draw left border
-	cgi.SCR_DrawColorPic(x, y, border_width, h, "_white", border_color);
-
-	// Draw right border
-	cgi.SCR_DrawColorPic(x + w - border_width, y, border_width, h, "_white", border_color);
 }
 
 void CG_DrawHUD(int32_t isplit, const cg_server_data_t *data, vrect_t hud_vrect, vrect_t hud_safe, int32_t scale, int32_t playernum, const player_state_t *ps) {
@@ -1826,11 +1805,9 @@ void CG_InitScreen() {
 	ui_acc_alttypeface = cgi.cvar("ui_acc_alttypeface", "0", CVAR_NOFLAGS);
 
 	// team border cvars
-	cl_teamBorder = cgi.cvar("cl_teamBorder", "1", CVAR_ARCHIVE);
+	cl_teamBorder = cgi.cvar("cl_teamBorder", "0", CVAR_ARCHIVE);
 	cl_teamBorderWidth = cgi.cvar("cl_teamBorderWidth", "4", CVAR_ARCHIVE);
 	cl_teamBorderAlpha = cgi.cvar("cl_teamBorderAlpha", "180", CVAR_ARCHIVE);
-	cl_teamBorderMode = cgi.cvar("cl_teamBorderMode", "0", CVAR_ARCHIVE);
-	g_gametype = cgi.cvar("g_gametype", "0", CVAR_NOFLAGS);
 
 	hud_data = {};
 }
