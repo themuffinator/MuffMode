@@ -844,6 +844,21 @@ static void G_SetClientEffects(gentity_t *ent) {
 }
 
 /*
+=================
+HasSpectators
+
+Check if any spectators are viewing this player.
+=================
+*/
+static inline bool HasSpectators(gentity_t *ent) {
+	for (auto ec : active_clients()) {
+		if (ec != ent && ec->client && ec->client->follow_target == ent)
+			return true;
+	}
+	return false;
+}
+
+/*
 ===============
 G_SetClientEvent
 ===============
@@ -860,8 +875,10 @@ static void G_SetClientEvent(gentity_t *ent) {
 			if (current_client->last_ladder_sound < level.time &&
 				(current_client->last_ladder_pos - ent->s.origin).length() > 48.f) {
 				ent->s.event = EV_LADDER_STEP;
-				// Send positioned sound for spectators
-				gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
+				// Send positioned sound for spectators only
+				if (HasSpectators(ent)) {
+					gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
+				}
 				current_client->last_ladder_pos = ent->s.origin;
 				current_client->last_ladder_sound = level.time + LADDER_SOUND_TIME;
 			}
@@ -869,8 +886,10 @@ static void G_SetClientEvent(gentity_t *ent) {
 	} else if (ent->groundentity && xyspeed > 225) {
 		if ((int)(current_client->bobtime + bobmove) != bobcycle_run) {
 			ent->s.event = EV_FOOTSTEP;
-			// Send positioned sound for spectators
-			gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/step1.wav"), 1, ATTN_NORM, 0);
+			// Send positioned sound for spectators only
+			if (HasSpectators(ent)) {
+				gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/step1.wav"), 1, ATTN_NORM, 0);
+			}
 		}
 	}
 }

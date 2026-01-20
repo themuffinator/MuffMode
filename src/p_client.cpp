@@ -3833,6 +3833,21 @@ bool G_ShouldPlayersCollide(bool weaponry) {
 
 /*
 =================
+HasSpectators
+
+Check if any spectators are viewing this player.
+=================
+*/
+static inline bool HasSpectators(gentity_t *ent) {
+	for (auto ec : active_clients()) {
+		if (ec != ent && ec->client && ec->client->follow_target == ent)
+			return true;
+	}
+	return false;
+}
+
+/*
+=================
 P_FallingDamage
 
 Paril-KEX: this is moved here and now reacts directly
@@ -3901,13 +3916,17 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 	if (delta > med_min) {
 		if (delta >= far_min) {
 			ent->s.event = EV_FALL_FAR;
-			// Send positioned sound for spectators
-			const char *fall_sound = brandom() ? "*fall1.wav" : "*fall2.wav";
-			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex(fall_sound), 1, ATTN_NORM, 0);
+			// Send positioned sound for spectators only
+			if (HasSpectators(ent)) {
+				const char *fall_sound = brandom() ? "*fall1.wav" : "*fall2.wav";
+				gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex(fall_sound), 1, ATTN_NORM, 0);
+			}
 		} else {
 			ent->s.event = EV_FALL_MEDIUM;
-			// Send positioned sound for spectators
-			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+			// Send positioned sound for spectators only
+			if (HasSpectators(ent)) {
+				gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+			}
 		}
 		if (!deathmatch->integer || !(g_dm_no_fall_damage->integer || GTF(GTF_ARENA))) {
 			ent->pain_debounce_time = level.time + FRAME_TIME_S; // no normal pain sound
@@ -3924,8 +3943,10 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 		}
 	} else {
 		ent->s.event = EV_FALL_SHORT;
-		// Send positioned sound for spectators
-		gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+		// Send positioned sound for spectators only
+		if (HasSpectators(ent)) {
+			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+		}
 	}
 
 	// Paril: falling damage noises alert monsters
@@ -4270,8 +4291,10 @@ void ClientThink(gentity_t *ent, usercmd_t *ucmd) {
 				if (!deathmatch->integer &&
 					client->last_ladder_sound < level.time) {
 					ent->s.event = EV_LADDER_STEP;
-					// Send positioned sound for spectators
-					gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
+					// Send positioned sound for spectators only
+					if (HasSpectators(ent)) {
+						gi.positioned_sound(ent->s.origin, ent, CHAN_FOOTSTEP, gi.soundindex("player/stepl.wav"), 1, ATTN_NORM, 0);
+					}
 					client->last_ladder_sound = level.time + LADDER_SOUND_TIME;
 				}
 			}
