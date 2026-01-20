@@ -3781,6 +3781,15 @@ void ClientDisconnect(gentity_t *ent) {
 
 	G_RevertVote(ent->client);
 
+	// If the disconnected client called the vote, cancel it
+	if (level.vote_client == ent->client) {
+		level.vote_time = 0_sec;
+		level.vote_execute_time = 0_sec;
+		level.vote_client = nullptr;
+		level.vote = nullptr;
+		level.vote_arg.clear();
+	}
+
 	gi.unlinkentity(ent);
 	ent->s.modelindex = 0;
 	ent->solid = SOLID_NOT;

@@ -1101,7 +1101,10 @@ static void InitGame() {
 	*level.weapon_count = { 0 };
 
 	level.vote = nullptr;
-	level.vote_arg = '\n';
+	level.vote_arg.clear();
+	level.vote_time = 0_sec;
+	level.vote_execute_time = 0_sec;
+	level.vote_client = nullptr;
 
 	level.total_player_deaths = 0;
 
@@ -2231,8 +2234,44 @@ static void CheckVote(void) {
 
 	// vote has passed, execute
 	if (level.vote_execute_time) {
-		if (level.time > level.vote_execute_time)
+		if (level.time > level.vote_execute_time) {
+			// Safety check: if vote state was cleared, try to recover if possible
+			if (!level.vote) {
+				// Only attempt recovery for map votes by checking if vote_arg is a valid map name
+				// Since "callvote map <mapname>" is the only map vote command, we can verify by checking g_map_list
+				bool is_valid_map = false;
+				if (!level.vote_arg.empty() && g_map_list->string[0]) {
+					char *token;
+					const char *mlist = g_map_list->string;
+					while (*(token = COM_Parse(&mlist))) {
+						if (!Q_strcasecmp(token, level.vote_arg.c_str())) {
+							is_valid_map = true;
+							break;
+						}
+					}
+				}
+				
+				if (is_valid_map) {
+					gi.Com_PrintFmt("Vote state was cleared but recovering map change to: {}\n", level.vote_arg);
+					std::string mapname = level.vote_arg;
+					level.vote_execute_time = 0_sec;
+					level.vote_time = 0_sec;
+					level.vote_client = nullptr;
+					level.vote_arg.clear();
+					level.changemap = mapname.c_str();
+					ExitLevel();
+					return;
+				} else {
+					gi.Com_PrintFmt("Vote execution cancelled: vote state was cleared and cannot recover command (was likely a non-map vote).\n");
+					level.vote_execute_time = 0_sec;
+					level.vote_time = 0_sec;
+					level.vote_client = nullptr;
+					level.vote_arg.clear();
+					return;
+				}
+			}
 			Vote_Passed();
+		}
 		return;
 	}
 
@@ -2267,6 +2306,8 @@ static void CheckVote(void) {
 	}
 
 	level.vote_time = 0_sec;
+	level.vote = nullptr;
+	level.vote_client = nullptr;
 }
 
 // ----------------

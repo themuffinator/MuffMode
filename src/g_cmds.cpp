@@ -2442,7 +2442,10 @@ static bool Vote_Val_None(gentity_t *ent) {
 }
 
 void Vote_Pass_Map() {
-	level.changemap = level.vote_arg.data();
+	// Store map name before vote state is cleared
+	// Must copy to local string since vote state will be cleared after this function returns
+	std::string mapname = level.vote_arg;
+	level.changemap = mapname.c_str();
 	ExitLevel();
 }
 
@@ -2512,6 +2515,12 @@ static bool Vote_Val_Ruleset(gentity_t *ent) {
 }
 
 void Vote_Pass_NextMap() {
+	// Clear vote state before map change to prevent race conditions
+	level.vote = nullptr;
+	level.vote_arg.clear();
+	level.vote_time = 0_sec;
+	level.vote_execute_time = 0_sec;
+	level.vote_client = nullptr;
 	Match_End();
 	level.intermission_exit = true;
 }
@@ -2671,6 +2680,30 @@ Vote_Passed
 ==================
 */
 void Vote_Passed() {
+	if (!level.vote) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed but command was lost. Please try again.\n");
+		
+		// Debug logging for vote state corruption
+		gi.Com_PrintFmt("========== VOTE STATE CORRUPTION DETECTED ==========\n");
+		gi.Com_PrintFmt("Map: {}\n", level.mapname);
+		gi.Com_PrintFmt("Level time: {:.2f}s\n", level.time.seconds<float>());
+		gi.Com_PrintFmt("Vote time: {:.2f}s ({}ms ago)\n", 
+			level.vote_time.seconds<float>(), 
+			(int)(level.time - level.vote_time).milliseconds());
+		gi.Com_PrintFmt("Vote execute time: {:.2f}s (should execute now)\n", level.vote_execute_time.seconds<float>());
+		gi.Com_PrintFmt("Vote arg: '{}'\n", level.vote_arg.empty() ? "(empty)" : level.vote_arg);
+		gi.Com_PrintFmt("Vote client: {}\n", level.vote_client ? level.vote_client->resp.netname : "(null)");
+		gi.Com_PrintFmt("Vote yes: {}, Vote no: {}\n", level.vote_yes, level.vote_no);
+		gi.Com_PrintFmt("Num voting clients: {}\n", level.num_voting_clients);
+		gi.Com_PrintFmt("level.vote pointer: {}\n", (void*)level.vote);
+		gi.Com_PrintFmt("===================================================\n");
+		
+		level.vote_time = 0_sec;
+		level.vote_execute_time = 0_sec;
+		level.vote_client = nullptr;
+		return;
+	}
+
 	level.vote->func();
 
 	level.vote = nullptr;
@@ -2718,6 +2751,11 @@ VoteCommandStore
 */
 void VoteCommandStore(gentity_t *ent) {
 	// start the voting, the caller automatically votes yes
+	if (!level.vote) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Internal error: vote command was lost.\n");
+		return;
+	}
+
 	level.vote_client = ent->client;
 	level.vote_time = level.time;
 	level.vote_yes = 1;

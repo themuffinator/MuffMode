@@ -724,6 +724,10 @@ static void G_Menu_Vote_Update(gentity_t *ent) {
 	Q_strlcpy(entries[i].text, G_Fmt("{} called a vote:", level.vote_client->resp.netname).data(), sizeof(entries[i].text));
 	
 	i = 4;
+	if (!level.vote) {
+		P_Menu_Close(ent);
+		return;
+	}
 	Q_strlcpy(entries[i].text, G_Fmt("{} {}", level.vote->name, level.vote_arg).data(), sizeof(entries[i].text));
 
 	if (level.vote_time + 3_sec > level.time) {
