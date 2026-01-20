@@ -29,6 +29,13 @@ static cvar_t *scr_maxlines;
 static cvar_t *ui_acc_contrast;
 static cvar_t *ui_acc_alttypeface;
 
+// team border cvars
+static cvar_t *cl_teamBorder;
+static cvar_t *cl_teamBorderWidth;
+static cvar_t *cl_teamBorderAlpha;
+static cvar_t *cl_teamBorderMode;
+static cvar_t *g_gametype;
+
 // static temp data used for hud
 static struct {
 	struct {
@@ -1685,6 +1692,77 @@ static void CG_DrawInventory(const player_state_t *ps, const std::array<int16_t,
 
 extern uint64_t cgame_init_time;
 
+// Team ID constants (matching g_local.h enum team_t)
+constexpr uint8_t TEAM_NONE = 0;
+constexpr uint8_t TEAM_SPECTATOR = 1;
+constexpr uint8_t TEAM_FREE = 2;
+constexpr uint8_t TEAM_RED = 3;
+constexpr uint8_t TEAM_BLUE = 4;
+
+// Game type constants (matching g_local.h enum gametype_t)
+constexpr int GT_TDM = 3;
+constexpr int GT_CTF = 4;
+
+/*
+================
+CG_DrawTeamBorder
+
+Draws a colored border around the screen to indicate team membership
+in TDM/CTF modes.
+================
+*/
+static void CG_DrawTeamBorder(const player_state_t *ps, vrect_t hud_vrect, int32_t scale) {
+	// Check if feature is enabled
+	if (!cl_teamBorder->integer)
+		return;
+
+	// Only draw if player is on a team
+	if (ps->team_id != TEAM_RED && ps->team_id != TEAM_BLUE)
+		return;
+
+	// Check game mode filter if enabled
+	if (cl_teamBorderMode->integer > 0) {
+		int gametype = g_gametype ? g_gametype->integer : 0;
+		
+		if (cl_teamBorderMode->integer == 1 && gametype != GT_TDM) // TDM only
+			return;
+		if (cl_teamBorderMode->integer == 2 && gametype != GT_CTF) // CTF only
+			return;
+	}
+
+	// Don't draw if HUD is hidden
+	if (ps->stats[STAT_LAYOUTS] & LAYOUTS_HIDE_HUD)
+		return;
+
+	// Get border settings
+	int32_t border_width = std::clamp(cl_teamBorderWidth->integer, 1, 20) * scale;
+	uint8_t alpha = (uint8_t)std::clamp(cl_teamBorderAlpha->integer, 0, 255);
+
+	// Define team colors with configurable alpha
+	rgba_t team_red_color{ 255, 50, 50, alpha };
+	rgba_t team_blue_color{ 50, 100, 255, alpha };
+
+	rgba_t border_color = (ps->team_id == TEAM_RED) ? team_red_color : team_blue_color;
+
+	// Calculate screen dimensions
+	int32_t x = hud_vrect.x * scale;
+	int32_t y = hud_vrect.y * scale;
+	int32_t w = hud_vrect.width * scale;
+	int32_t h = hud_vrect.height * scale;
+
+	// Draw top border
+	cgi.SCR_DrawColorPic(x, y, w, border_width, "_white", border_color);
+
+	// Draw bottom border
+	cgi.SCR_DrawColorPic(x, y + h - border_width, w, border_width, "_white", border_color);
+
+	// Draw left border
+	cgi.SCR_DrawColorPic(x, y, border_width, h, "_white", border_color);
+
+	// Draw right border
+	cgi.SCR_DrawColorPic(x + w - border_width, y, border_width, h, "_white", border_color);
+}
+
 void CG_DrawHUD(int32_t isplit, const cg_server_data_t *data, vrect_t hud_vrect, vrect_t hud_safe, int32_t scale, int32_t playernum, const player_state_t *ps) {
 	if (cgi.CL_InAutoDemoLoop()) {
 		if (cl_paused->integer) return; // demo is paused, menu is open
@@ -1713,6 +1791,10 @@ void CG_DrawHUD(int32_t isplit, const cg_server_data_t *data, vrect_t hud_vrect,
 	// inventory too
 	if (ps->stats[STAT_LAYOUTS] & LAYOUTS_INVENTORY)
 		CG_DrawInventory(ps, data->inventory, hud_vrect, scale);
+
+	// draw team border for TDM/CTF modes
+	if (!cl_skipHud->integer)
+		CG_DrawTeamBorder(ps, hud_vrect, scale);
 }
 
 /*
@@ -1742,6 +1824,13 @@ void CG_InitScreen() {
 	scr_maxlines = cgi.cvar("scr_maxlines", "4", CVAR_ARCHIVE);
 	ui_acc_contrast = cgi.cvar("ui_acc_contrast", "0", CVAR_NOFLAGS);
 	ui_acc_alttypeface = cgi.cvar("ui_acc_alttypeface", "0", CVAR_NOFLAGS);
+
+	// team border cvars
+	cl_teamBorder = cgi.cvar("cl_teamBorder", "1", CVAR_ARCHIVE);
+	cl_teamBorderWidth = cgi.cvar("cl_teamBorderWidth", "4", CVAR_ARCHIVE);
+	cl_teamBorderAlpha = cgi.cvar("cl_teamBorderAlpha", "180", CVAR_ARCHIVE);
+	cl_teamBorderMode = cgi.cvar("cl_teamBorderMode", "0", CVAR_ARCHIVE);
+	g_gametype = cgi.cvar("g_gametype", "0", CVAR_NOFLAGS);
 
 	hud_data = {};
 }

@@ -1482,6 +1482,9 @@ void G_SetStats(gentity_t *ent) {
 	}
 	ent->client->ps.stats[STAT_HEALTH] = ent->health;
 
+	// Set team_id for client-side team border display
+	ent->client->ps.team_id = (uint8_t)ent->client->sess.team;
+
 	//ent->client->ps.stats[STAT_SHOW_STATUSBAR] = ent->client->showscores ? 0 : ent->client->follow_target ? 1 : 0;
 	if (!minhud) {
 		//
@@ -1929,6 +1932,9 @@ void G_SetSpectatorStats(gentity_t *ent) {
 
 	if (!cl->follow_target)
 		G_SetStats(ent);
+	else
+		// Still set team_id even when following (in case we follow someone on a team)
+		cl->ps.team_id = (uint8_t)cl->sess.team;
 
 	cl->ps.stats[STAT_SPECTATOR] = 1;
 
