@@ -83,6 +83,10 @@ struct vec3_t
 	}
 	[[nodiscard]] constexpr vec3_t operator/(const vec3_t &v) const
 	{
+		// avoid division by zero - return zero vector if any component is zero
+		if (v.x == 0.0f || v.y == 0.0f || v.z == 0.0f)
+			return { 0.0f, 0.0f, 0.0f };
+		
 		return { x / v.x, y / v.y, z / v.z };
 	}
 	template<typename T, typename = std::enable_if_t<std::is_floating_point_v<T> || std::is_integral_v<T>>>

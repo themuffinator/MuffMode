@@ -70,7 +70,11 @@ static inline float P_CurrentKickFactor(gentity_t *ent) {
 	if (ent->client->kick.time < level.time)
 		return 0.f;
 
-	float f = (ent->client->kick.time - level.time).seconds() / ent->client->kick.total.seconds();
+	float total_sec = ent->client->kick.total.seconds();
+	if (total_sec <= 0.0f)
+		return 0.f;
+
+	float f = (ent->client->kick.time - level.time).seconds() / total_sec;
 	return f;
 }
 
