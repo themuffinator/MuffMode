@@ -1806,8 +1806,8 @@ void CG_InitScreen() {
 
 	// team border cvars
 	cl_teamBorder = cgi.cvar("cl_teamBorder", "0", CVAR_ARCHIVE);
-	cl_teamBorderWidth = cgi.cvar("cl_teamBorderWidth", "4", CVAR_ARCHIVE);
-	cl_teamBorderAlpha = cgi.cvar("cl_teamBorderAlpha", "180", CVAR_ARCHIVE);
+	cl_teamBorderWidth = cgi.cvar("cl_teamBorderWidth", "1", CVAR_ARCHIVE);
+	cl_teamBorderAlpha = cgi.cvar("cl_teamBorderAlpha", "150", CVAR_ARCHIVE);
 
 	hud_data = {};
 }

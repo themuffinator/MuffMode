@@ -2157,7 +2157,13 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 	ent->client->resp.ctf_state = 0;
 	ent->client->sess.inactive = inactive;
 	ent->client->sess.inactivity_time = level.time + 1_min;
-	ent->client->sess.team_join_time = desired_team == TEAM_SPECTATOR ? 0_sec : level.time;
+	// If queued for duel, record when they joined the queue for proper ordering.
+	// Otherwise, non-queued spectators get 0_sec, playing players get current time.
+	if (desired_team == TEAM_SPECTATOR) {
+		ent->client->sess.team_join_time = queue ? level.time : 0_sec;
+	} else {
+		ent->client->sess.team_join_time = level.time;
+	}
 	ent->client->resp.team_delay_time = force || !ent->client->sess.initialised ? level.time : level.time + 5_sec;
 	ent->client->sess.spectator_state = desired_team == TEAM_SPECTATOR ? SPECTATOR_FREE : SPECTATOR_NOT;
 	ent->client->sess.spectator_client = 0;
@@ -2442,29 +2448,91 @@ static bool Vote_Val_None(gentity_t *ent) {
 }
 
 void Vote_Pass_Map() {
-	// Store map name before vote state is cleared
-	// Must copy to local string since vote state will be cleared after this function returns
-	std::string mapname = level.vote_arg;
-	level.changemap = mapname.c_str();
+	// Store map name in level.nextmap buffer to avoid dangling pointer
+	// Must copy to safe storage since vote state will be cleared after this function returns
+	if (level.vote_arg.length() >= sizeof(level.nextmap)) {
+		gi.Com_Error("Map name too long in vote execution");
+		return;
+	}
+	Q_strlcpy(level.nextmap, level.vote_arg.c_str(), sizeof(level.nextmap));
+	level.changemap = level.nextmap;  // Now points to safe storage
 	ExitLevel();
+}
+
+// Helper function to validate a map name using two-tier system:
+// First checks g_map_pool (all available maps), then falls back to g_map_list (rotation maps)
+static bool IsMapValid(const char *mapname) {
+	if (!mapname || !mapname[0])
+		return false;
+
+	char *token;
+
+	// First check g_map_pool if it exists and is non-empty
+	if (g_map_pool->string[0]) {
+		const char *pool = g_map_pool->string;
+
+		while (*(token = COM_Parse(&pool))) {
+			if (!Q_strcasecmp(token, mapname))
+				return true;
+		}
+	}
+
+	// Fall back to g_map_list if pool didn't have it (or pool was empty)
+	if (g_map_list->string[0]) {
+		const char *mlist = g_map_list->string;
+
+		while (*(token = COM_Parse(&mlist))) {
+			if (!Q_strcasecmp(token, mapname))
+				return true;
+		}
+	}
+
+	return false;
 }
 
 static bool Vote_Val_Map(gentity_t *ent) {
 	if (gi.argc() < 3) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", g_map_list->string);
+		// Show available maps from pool first, then list
+		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
+		std::string map_display;
+
+		if (g_map_pool->string[0]) {
+			map_display = g_map_pool->string;
+		} else if (g_map_list->string[0]) {
+			map_display = g_map_list->string;
+		}
+
+		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {
+			map_display = map_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
+		}
+
+		if (map_display.length()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", map_display.c_str());
+		} else {
+			gi.LocClient_Print(ent, PRINT_HIGH, "No map list or pool configured.\n");
+		}
 		return false;
 	}
 
-	char *token;
-	const char *mlist = g_map_list->string;
-
-	while (*(token = COM_Parse(&mlist)))
-		if (!Q_strcasecmp(token, gi.argv(2)))
-			break;
-
-	if (!*token) {
+	if (!IsMapValid(gi.argv(2))) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Unknown map.\n");
-		gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", g_map_list->string);
+		// Show available maps
+		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
+		std::string map_display;
+
+		if (g_map_pool->string[0]) {
+			map_display = g_map_pool->string;
+		} else if (g_map_list->string[0]) {
+			map_display = g_map_list->string;
+		}
+
+		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {
+			map_display = map_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
+		}
+
+		if (map_display.length()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", map_display.c_str());
+		}
 		return false;
 	}
 
@@ -2483,9 +2551,74 @@ void Vote_Pass_Gametype() {
 	ChangeGametype(gt);
 }
 
+// Helper function to check if a gametype is votable
+static bool IsGametypeVotable(gametype_t gt) {
+	// If no votable list is set, allow all gametypes (backward compatible)
+	if (!g_votable_gametypes->string[0])
+		return true;
+
+	// Check if the gametype's short name is in the votable list
+	const char *votable_list = g_votable_gametypes->string;
+	char *token;
+
+	while (*(token = COM_Parse(&votable_list))) {
+		if (!Q_strcasecmp(token, gt_short_name[(int)gt]))
+			return true;
+	}
+
+	return false;
+}
+
+// Helper function to build list of votable gametypes for help text
+static std::string GetVotableGametypesList() {
+	std::string result;
+
+	if (!g_votable_gametypes->string[0]) {
+		// If no restriction, show all implemented gametypes
+		for (int i = (int)GT_FIRST; i <= (int)GT_LAST; i++) {
+			// Skip GT_NONE, GT_STRIKE, GT_RR, GT_LMS, GT_BALL (not fully implemented)
+			if (i == GT_NONE || i == GT_STRIKE || i == GT_RR || i == GT_LMS || i == GT_BALL)
+				continue;
+			if (!result.empty())
+				result += "|";
+			result += gt_short_name[i];
+		}
+	} else {
+		// Show only votable gametypes
+		const char *votable_list = g_votable_gametypes->string;
+		char *token;
+		bool first = true;
+
+		while (*(token = COM_Parse(&votable_list))) {
+			if (!first)
+				result += "|";
+			result += token;
+			first = false;
+		}
+	}
+
+	return result;
+}
+
 static bool Vote_Val_Gametype(gentity_t *ent) {
-	if (GT_IndexFromString(gi.argv(2)) == gametype_t::GT_NONE) {
+	gametype_t gt = GT_IndexFromString(gi.argv(2));
+	
+	if (gt == GT_NONE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid gametype.\n");
+		std::string votable_list = GetVotableGametypesList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid gametypes are: {}\n", votable_list.c_str());
+		}
+		return false;
+	}
+
+	// Check if gametype is votable
+	if (!IsGametypeVotable(gt)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "This gametype is not available for voting.\n");
+		std::string votable_list = GetVotableGametypesList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid gametypes are: {}\n", votable_list.c_str());
+		}
 		return false;
 	}
 
@@ -2644,7 +2777,7 @@ vcmds_t vote_cmds[] = {
 	{"map",					Vote_Val_Map,			Vote_Pass_Map,			1,		2,	"[mapname]",						"changes to the specified map"},
 	{"nextmap",				Vote_Val_None,			Vote_Pass_NextMap,		2,		1,	"",									"move to the next map in the rotation"},
 	{"restart",				Vote_Val_None,			Vote_Pass_RestartMatch,	4,		1,	"",									"restarts the current match"},
-	{"gametype",			Vote_Val_Gametype,		Vote_Pass_Gametype,		8,		2,	"<ffa|duel|tdm|ctf|ca|ft|horde>",	"changes the current gametype"},
+	{"gametype",			Vote_Val_Gametype,		Vote_Pass_Gametype,		8,		2,	"<gametype>",	"changes the current gametype"},
 	{"timelimit",			Vote_Val_Timelimit,		Vote_Pass_Timelimit,	16,		2,	"<0..$>",							"alters the match time limit, 0 for no time limit"},
 	{"scorelimit",			Vote_Val_Scorelimit,	Vote_Pass_Scorelimit,	32,		2,	"<0..$>",							"alters the match score limit, 0 for no score limit"},
 	{"fraglimit",			Vote_Val_Scorelimit,	Vote_Pass_Scorelimit,	32,		2,	"<0..$>",							"alters the match score limit, 0 for no score limit (alias for scorelimit)"},
@@ -2742,6 +2875,14 @@ static bool ValidVoteCommand(gentity_t *ent) {
 
 	level.vote = cc;
 	const char *raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
+	// Limit vote_arg length to prevent message buffer overflow
+	// MAX_QPATH is 64, but we allow a bit more for safety (128 chars should be plenty)
+	constexpr size_t MAX_VOTE_ARG_LENGTH = 128;
+	size_t arg_len = strlen(raw_arg);
+	if (arg_len > MAX_VOTE_ARG_LENGTH) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Vote argument too long (max {} characters).\n", MAX_VOTE_ARG_LENGTH);
+		return false;
+	}
 	level.vote_arg = std::string(raw_arg);
 	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_arg);
 	return true;
@@ -2764,7 +2905,10 @@ void VoteCommandStore(gentity_t *ent) {
 	level.vote_yes = 1;
 	level.vote_no = 0;
 	
-	gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}{}\n", level.vote_client->resp.netname, level.vote->name, level.vote_arg[0] ? G_Fmt(" {}", level.vote_arg).data() : "");
+	// Format vote argument safely - must store in variable to avoid dangling pointer
+	// when LocBroadcast_Print sends to multiple clients
+	std::string vote_arg_display = level.vote_arg.empty() ? "" : " " + level.vote_arg;
+	gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}{}\n", level.vote_client->resp.netname, level.vote->name, vote_arg_display.c_str());
 
 	for (auto ec : active_clients())
 		ec->client->pers.voted = ec == ent ? 1 : 0;
@@ -3217,14 +3361,28 @@ static void Cmd_Gametype_f(gentity_t *ent) {
 		return;
 
 	if (gi.argc() < 2) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <ffa|duel|tdm|ctf|ca|ft|horde>\nChanges current gametype. Current gametype is {} ({}).\n", gi.argv(0), gt_long_name[g_gametype->integer], g_gametype->integer);
+		std::string votable_list = GetVotableGametypesList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <{}>\nChanges current gametype. Current gametype is {} ({}).\n", gi.argv(0), votable_list.c_str(), gt_long_name[g_gametype->integer], g_gametype->integer);
+		} else {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <gametype>\nChanges current gametype. Current gametype is {} ({}).\n", gi.argv(0), gt_long_name[g_gametype->integer], g_gametype->integer);
+		}
 		return;
 	}
 
 	gametype_t gt = GT_IndexFromString(gi.argv(1));
 	if (gt == GT_NONE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid gametype.\n");
+		std::string votable_list = GetVotableGametypesList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid gametypes are: {}\n", votable_list.c_str());
+		}
 		return;
+	}
+
+	// Admins can set any gametype, but warn if it's not votable
+	if (g_votable_gametypes->string[0] && !IsGametypeVotable(gt)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Warning: This gametype is not in the votable list, but setting it anyway (admin override).\n");
 	}
 
 	ChangeGametype(gt);
@@ -3255,11 +3413,11 @@ static void Cmd_Ruleset_f(gentity_t *ent) {
 
 static void Cmd_SetMap_f(gentity_t *ent) {
 	if (gi.argc() < 2) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [mapname]\nChanges to a map within the map list.", gi.argv(0));
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [mapname]\nChanges to a map within the map pool or list.", gi.argv(0));
 		return;
 	}
 
-	if (g_map_list->string[0] && !strstr(g_map_list->string, gi.argv(1))) {
+	if (!IsMapValid(gi.argv(1))) {
 		gi.Client_Print(ent, PRINT_HIGH, "Map name is not valid.\n");
 		return;
 	}
@@ -3429,7 +3587,13 @@ static void MQ_PrintList(gentity_t *ent) {
 static void Cmd_MapList_f(gentity_t *ent) {
 	if (g_map_list->string[0]) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Current map list:\n");
-		gi.LocClient_Print(ent, PRINT_HIGH, G_Fmt("{}\n", g_map_list->string).data());
+		// Truncate map list if too long to prevent message overflow
+		constexpr size_t MAX_MAP_LIST_DISPLAY = 512;
+		std::string map_list_display = g_map_list->string;
+		if (map_list_display.length() > MAX_MAP_LIST_DISPLAY) {
+			map_list_display = map_list_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
+		}
+		gi.LocClient_Print(ent, PRINT_HIGH, "{}\n", map_list_display.c_str());
 		if (MQ_Count()) {
 			gi.LocClient_Print(ent, PRINT_HIGH, "\nCurrent MyMap Queue:\n");
 			MQ_PrintList(ent);
@@ -3466,7 +3630,13 @@ static void Cmd_MyMap_f(gentity_t *ent) {
 
 	if (gi.argc() < 2) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Add a map to the MyMap Queue.\nRecognized maps are:\n");
-		gi.LocClient_Print(ent, PRINT_HIGH, "{}\n", g_map_list->string);
+		// Truncate map list if too long to prevent message overflow
+		constexpr size_t MAX_MAP_LIST_DISPLAY = 512;
+		std::string map_list_display = g_map_list->string;
+		if (map_list_display.length() > MAX_MAP_LIST_DISPLAY) {
+			map_list_display = map_list_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
+		}
+		gi.LocClient_Print(ent, PRINT_HIGH, "{}\n", map_list_display.c_str());
 
 		if (MQ_Count()) {
 			gi.LocClient_Print(ent, PRINT_HIGH, "MyMap Queue => ");

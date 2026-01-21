@@ -166,6 +166,7 @@ cvar_t *g_map_list;
 cvar_t *g_map_list_shuffle;
 cvar_t *g_map_list_shuffle_once;
 cvar_t *g_map_pool;
+cvar_t *g_votable_gametypes;
 cvar_t *g_match_lock;
 cvar_t *g_matchstats;
 cvar_t *g_maxvelocity;
@@ -1021,6 +1022,7 @@ static void InitGame() {
 	g_map_list_shuffle = gi.cvar("g_map_list_shuffle", "1", CVAR_NOFLAGS);
 	g_map_list_shuffle_once = gi.cvar("g_map_list_shuffle_once", "0", CVAR_NOFLAGS);
 	g_map_pool = gi.cvar("g_map_pool", "", CVAR_NOFLAGS);
+	g_votable_gametypes = gi.cvar("g_votable_gametypes", "", CVAR_NOFLAGS);
 	g_match_lock = gi.cvar("g_match_lock", "0", CVAR_SERVERINFO);
 	g_matchstats = gi.cvar("g_matchstats", "0", CVAR_NOFLAGS);
 	g_motd_filename = gi.cvar("g_motd_filename", "motd.txt", CVAR_NOFLAGS);
@@ -2253,12 +2255,21 @@ static void CheckVote(void) {
 				
 				if (is_valid_map) {
 					gi.Com_PrintFmt("Vote state was cleared but recovering map change to: {}\n", level.vote_arg);
-					std::string mapname = level.vote_arg;
+					// Store in level.nextmap buffer to avoid dangling pointer
+					if (level.vote_arg.length() >= sizeof(level.nextmap)) {
+						gi.Com_PrintFmt("Vote execution cancelled: map name too long.\n");
+						level.vote_execute_time = 0_sec;
+						level.vote_time = 0_sec;
+						level.vote_client = nullptr;
+						level.vote_arg.clear();
+						return;
+					}
+					Q_strlcpy(level.nextmap, level.vote_arg.c_str(), sizeof(level.nextmap));
 					level.vote_execute_time = 0_sec;
 					level.vote_time = 0_sec;
 					level.vote_client = nullptr;
 					level.vote_arg.clear();
-					level.changemap = mapname.c_str();
+					level.changemap = level.nextmap;  // Safe pointer
 					ExitLevel();
 					return;
 				} else {
@@ -2323,17 +2334,17 @@ static void CheckVote(void) {
 		level.vote_client = nullptr;
 		level.vote_arg.clear();
 	} else {
-		// Use proper majority calculation: (n+1)/2 for true majority
-		// This ensures: 3 voters need 2, 4 voters need 3, etc.
-		int majority = (level.num_voting_clients + 1) / 2;
-		if (level.vote_yes >= majority) {
+		// Use proper majority calculation: need more than half
+		// This ensures: 2 voters need 2, 3 voters need 2, 4 voters need 3, etc.
+		int halfpoint = level.num_voting_clients / 2;
+		if (level.vote_yes > halfpoint) {
 			// execute the command, then remove the vote
 			gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
 			level.vote_execute_time = level.time + 3_sec;
 			// Clear vote_time to stop checking, but KEEP level.vote and level.vote_arg for execution
 			level.vote_time = 0_sec;
 			AnnouncerSound(world, "vote_passed", nullptr, false);
-		} else if (level.vote_no >= majority) {
+		} else if (level.vote_no >= halfpoint) {
 			// same behavior as a timeout
 			gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
 			AnnouncerSound(world, "vote_failed", nullptr, false);
@@ -2911,11 +2922,40 @@ bool MQ_Add(gentity_t *ent, const char *mapname) {
 		return false;
 	}
 
-	if (!g_map_list->string[0])
+	// Check if either pool or list exists
+	if (!g_map_pool->string[0] && !g_map_list->string[0])
 		return false;
 
-	if (!strstr(g_map_list->string, mapname)) {
-		gi.Client_Print(ent, PRINT_HIGH, "Selected map is either invalid or not in cycle.\n");
+	// Validate map against pool first, then list
+	char *token;
+	bool found = false;
+
+	// First check g_map_pool if it exists and is non-empty
+	if (g_map_pool->string[0]) {
+		const char *pool = g_map_pool->string;
+
+		while (*(token = COM_Parse(&pool))) {
+			if (!Q_strcasecmp(token, mapname)) {
+				found = true;
+				break;
+			}
+		}
+	}
+
+	// Fall back to g_map_list if pool didn't have it (or pool was empty)
+	if (!found && g_map_list->string[0]) {
+		const char *mlist = g_map_list->string;
+
+		while (*(token = COM_Parse(&mlist))) {
+			if (!Q_strcasecmp(token, mapname)) {
+				found = true;
+				break;
+			}
+		}
+	}
+
+	if (!found) {
+		gi.Client_Print(ent, PRINT_HIGH, "Selected map is either invalid or not in pool/list.\n");
 		return false;
 	}
 

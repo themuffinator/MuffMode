@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.17";
+constexpr const char *GAMEMOD_VERSION = "0.21.20";
 
 //==================================================================
 
@@ -2450,6 +2450,7 @@ extern cvar_t *g_map_list;
 extern cvar_t *g_map_list_shuffle;
 extern cvar_t *g_map_list_shuffle_once;
 extern cvar_t *g_map_pool;
+extern cvar_t *g_votable_gametypes;
 extern cvar_t *g_match_lock;
 extern cvar_t *g_matchstats;
 extern cvar_t *g_maxvelocity;
