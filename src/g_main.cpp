@@ -1595,13 +1595,13 @@ next queued player in the game and restart
 */
 static bool Duel_AddPlayer(void) {
 	if (notGT(GT_DUEL))
-		return true;
+		return false;
 
 	if (level.num_playing_clients >= 2)
-		return true;
+		return false;
 
-	// never change during intermission or outside of warmup
-	if (level.match_state > matchst_t::MATCH_WARMUP_DEFAULT || level.intermission_time || level.intermission_queued)
+	// never change during intermission or outside of warmup (allow during readyup to refill if player disconnects)
+	if (level.match_state > matchst_t::MATCH_WARMUP_READYUP || level.intermission_time || level.intermission_queued)
 		return false;
 
 	gclient_t *next_in_line = nullptr;
@@ -1632,7 +1632,7 @@ static bool Duel_AddPlayer(void) {
 	// set them to free-for-all team
 	SetTeam(&g_entities[next_in_line - game.clients + 1], TEAM_FREE, false, true, false);
 
-	return false;
+	return true;
 }
 
 /*
@@ -2057,8 +2057,23 @@ static void CheckDMWarmupState(void) {
 	}
 
 	// duel: pull in a queued spectator if needed
-	if (!Duel_AddPlayer())
+	if (Duel_AddPlayer())
 		return;
+
+	// duel: automatically queue spectating bots (they'll be pulled in when needed)
+	// Queue bots regardless of match state - Duel_AddPlayer will only pull them during warmup
+	if (GT(GT_DUEL) && !level.intermission_time && !level.intermission_queued) {
+		for (auto ec : active_clients()) {
+			if (ClientIsPlaying(ec->client))
+				continue;
+			if (!(ec->client->sess.is_a_bot || ec->svflags & SVF_BOT))
+				continue;
+			if (ec->client->sess.duel_queued)
+				continue; // already queued
+			// queue this bot so it's ready for future matches
+			SetTeam(ec, TEAM_SPECTATOR, false, true, false);
+		}
+	}
 
 	min_players = GT(GT_DUEL) ? 2 : minplayers->integer;
 	if (level.match_state < matchst_t::MATCH_COUNTDOWN && !g_dm_do_warmup->integer && level.num_playing_clients >= min_players) {
@@ -3732,6 +3747,11 @@ void ExitLevel() {
 		if (g_coop_enable_lives->integer)
 			for (auto player : active_clients())
 				player->client->pers.lives = g_coop_num_lives->integer + 1;
+	}
+
+	// For duel mode, if changemap is null, restart on the same map
+	if (GT(GT_DUEL) && level.changemap == nullptr) {
+		level.changemap = level.mapname;
 	}
 
 	if (level.changemap == nullptr) {

@@ -1284,7 +1284,9 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 
 		}
 	} else {
-		if (level.locked[TEAM_FREE] || level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) {
+		// Allow duel queue joining even during match lock (queue joining doesn't affect active match)
+		bool is_duel_queue_join = GT(GT_DUEL) && level.num_playing_clients == 2;
+		if ((level.locked[TEAM_FREE] || level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) && !is_duel_queue_join) {
 			Q_strlcpy(entries[jmenu_free_join].text, "Match LOCKED during play", sizeof(entries[jmenu_free_join].text));
 			entries[jmenu_free_join].SelectFunc = nullptr;
 		} else if (GT(GT_DUEL) && level.num_playing_clients == 2) {

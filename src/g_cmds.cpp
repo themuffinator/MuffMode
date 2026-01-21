@@ -2091,9 +2091,13 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 	bool queue = false;
 	
 	if (!force) {
+		// Check if this would be a duel queue join (spectator with queue flag)
+		bool would_be_duel_queue = GT(GT_DUEL) && desired_team != TEAM_SPECTATOR && level.num_playing_clients >= 2;
+		
 		if (!ClientIsPlaying(ent->client) && desired_team != TEAM_SPECTATOR) {
 			bool revoke = false;
-			if (level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) {
+			// Allow duel queue joining even during match lock (queue joining doesn't affect active match)
+			if (level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer && !would_be_duel_queue) {
 				gi.LocClient_Print(ent, PRINT_HIGH, "Match is locked whilst in progress, no joining permitted now.\n");
 				revoke = true;
 			} else if (level.num_playing_human_clients >= maxplayers->integer) {
