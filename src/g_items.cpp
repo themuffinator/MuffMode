@@ -2068,7 +2068,7 @@ static void Use_Powerup_BroadcastMsg(gentity_t *ent, gitem_t *item, const char *
 		//} else {
 		//	gi.LocBroadcast_Print(PRINT_HIGH, "{} got the {}!\n", ent->client->resp.netname, item->pickup_name);
 		}
-		if (RS(RS_MM) || RS(RS_Q3A)) {
+		if (RS(RS_MM) || RS(RS_Q3A) || RS(RS_VANILLA_PLUS)) {
 			gi.sound(ent, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(sound_name), 1, ATTN_NONE, 0);
 			AnnouncerSound(world, announcer_name, nullptr, false);
 		}
@@ -2736,7 +2736,12 @@ TOUCH(Touch_Item) (gentity_t *ent, gentity_t *other, const trace_t &tr, bool oth
 		if (ent->noise_index)
 			gi.sound(other, CHAN_ITEM, ent->noise_index, 1, ATTN_NORM, 0);
 		else if (it->pickup_sound) {
-			gi.sound(other, CHAN_ITEM, gi.soundindex(it->pickup_sound), 1, ATTN_NORM, 0);
+			// Broadcast powerup pickup sounds to all players in deathmatch (including TDM/CTF) with MM/Q3A/Vanilla Plus ruleset
+			if (deathmatch->integer && (it->flags & IF_POWERUP) && (RS(RS_MM) || RS(RS_Q3A) || RS(RS_VANILLA_PLUS))) {
+				gi.sound(ent, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(it->pickup_sound), 1, ATTN_NONE, 0);
+			} else {
+				gi.sound(other, CHAN_ITEM, gi.soundindex(it->pickup_sound), 1, ATTN_NORM, 0);
+			}
 		}
 		int32_t player_number = other->s.number - 1;
 

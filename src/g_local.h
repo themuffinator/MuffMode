@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.25";
+constexpr const char *GAMEMOD_VERSION = "0.21.26";
 
 //==================================================================
 
@@ -162,6 +162,7 @@ enum ruleset_t : uint8_t {
 	RS_Q2RE,
 	RS_MM,
 	RS_Q3A,
+	RS_VANILLA_PLUS,
 	RS_Q1,
 	RS_NUM_RULESETS
 };
@@ -172,6 +173,7 @@ constexpr const char *rs_short_name[RS_NUM_RULESETS] = {
 	"q2re",
 	"mm",
 	"q3a",
+	"vp",
 	"q",
 };
 constexpr const char *rs_long_name[RS_NUM_RULESETS] = {
@@ -179,6 +181,7 @@ constexpr const char *rs_long_name[RS_NUM_RULESETS] = {
 	"QUAKE II Rerelease",
 	"Muff Mode",
 	"QUAKE III Arena style",
+	"Vanilla Plus",
 	"QUAKE style",
 };
 
@@ -2502,11 +2505,6 @@ extern cvar_t *g_warmup_countdown;
 extern cvar_t *g_warmup_ready_percentage;
 extern cvar_t *g_weapon_projection;
 extern cvar_t *g_weapon_respawn_time;
-extern cvar_t *g_chaingun_max_shots;
-extern cvar_t *g_chaingun_damage;
-extern cvar_t *g_machinegun_damage;
-extern cvar_t *g_hyperblaster_speed;
-extern cvar_t *g_railgun_damage;
 
 extern cvar_t *bot_name_prefix;
 

@@ -124,6 +124,13 @@ Inspired by Quake III Arena, this ruleset aims to replicate some of the differen
  - Removed Mega timer rule, Mega Health respawns after 60 seconds
  - **Invulnerability** powerup has been replaced by Protection - player receives no splash damage, full protection from slime damage, third protection from lava, half direct damage after armor protection.
  - Powerup spawn rules: 120 sec respawn default, 30-45 (randomised) initial spawn delay, global spawn and pickup sounds.
+
+### Vanilla Plus (g_ruleset 4)
+A vanilla-friendly ruleset with select balance improvements:
+ - **Plasma Beam** DM damage reduced from 15 to 10, maximum range limited to 768 units (same as LG in Q3)
+ - **Chaingun** damage reduced to 5 (from 6 in DM / 8 in coop)
+ - **Hyperblaster** projectile speed increased to 1100 (from 1000)
+ - Powerup pickup and activation sounds broadcast to all players in deathmatch
  
 ## Commands and Variables
 
@@ -143,7 +150,7 @@ Use **[command] [arg]** for the below listed admin commands:
  - **nextmap**: forces level change to the next map.
  - **map_restart**: restarts current level and session, applies latches cvar changes
  - **gametype [gametype_name]**: changes gametype to selected option, then resets the level
- - **ruleset <q2re|mm|q3a>**: changes gameplay style
+ - **ruleset <q2re|mm|q3a|vp>**: changes gameplay style
  - **readyall**: force all players to ready status (during readying warmup status)
  - **unreadyall**: force all players to NOT ready status (during readying warmup status)
 
@@ -192,7 +199,7 @@ Use **callvote [command] [arg]** for the below listed vote commands:
  - **unlagged**: enables or disables lag compensation.
  - **cointoss**: randomly returns either HEADS or TAILS.
  - **random**: randomly returns a number from 2 to argument value, 100 max.
- - **ruleset <q2re|mm|q3a>**: changes gameplay style
+ - **ruleset <q2re|mm|q3a|vp>**: changes gameplay style
 
 ### Cvar Changes
  - g_dm_spawn_farthest: added an option, valid values are as follows:
@@ -263,6 +270,7 @@ Use **callvote [command] [arg]** for the below listed vote commands:
 	1. Quake II Rerelease
 	2. Muff Mode (rebalanced Q2Re)
 	3. Quake III Arena style
+	4. Vanilla Plus
  - **g_showhelp**: when set to 1, prints a quick explanation about game modifications to players. (default: 1)
  - **g_starting_armor**: sets starting armor for players on spawn (0-999) (default 0)
  - **g_starting_health**: sets starting health for players on spawn (1-999) (default 100)

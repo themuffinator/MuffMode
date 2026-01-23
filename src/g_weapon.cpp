@@ -1368,7 +1368,7 @@ static void fire_beams(gentity_t *self, const vec3_t &start, const vec3_t &aimdi
 	dir = vectoangles(aimdir);
 	AngleVectors(dir, forward, right, up);
 
-	float dist = RS(RS_MM) ? 768 : 8192;
+	float dist = (RS(RS_MM) || RS(RS_VANILLA_PLUS)) ? 768 : 8192;
 	end = start + (forward * dist);
 
 	if (gi.pointcontents(start) & MASK_WATER) {
