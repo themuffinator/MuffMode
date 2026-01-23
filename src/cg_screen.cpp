@@ -1805,7 +1805,7 @@ void CG_InitScreen() {
 	ui_acc_alttypeface = cgi.cvar("ui_acc_alttypeface", "0", CVAR_NOFLAGS);
 
 	// team border cvars
-	cl_teamBorder = cgi.cvar("cl_teamBorder", "0", CVAR_ARCHIVE);
+	cl_teamBorder = cgi.cvar("cl_teamBorder", "1", CVAR_ARCHIVE);
 	cl_teamBorderWidth = cgi.cvar("cl_teamBorderWidth", "1", CVAR_ARCHIVE);
 	cl_teamBorderAlpha = cgi.cvar("cl_teamBorderAlpha", "150", CVAR_ARCHIVE);
 

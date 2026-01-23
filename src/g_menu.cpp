@@ -545,7 +545,37 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 	int i = 2;
 	size_t num = 0;
 
-	auto values = str_split(g_map_list->string, ' ');
+	// Combine maps from both g_map_pool and g_map_list, with deduplication
+	std::vector<std::string> values;
+	
+	// Helper lambda to check if a map already exists (case-insensitive)
+	auto map_exists = [&values](const std::string &map) -> bool {
+		for (const auto &existing : values) {
+			if (!Q_strcasecmp(existing.c_str(), map.c_str()))
+				return true;
+		}
+		return false;
+	};
+	
+	// Add maps from g_map_pool first
+	if (g_map_pool->string[0]) {
+		auto pool_values = str_split(g_map_pool->string, ' ');
+		for (const auto &map : pool_values) {
+			if (!map.empty() && !map_exists(map)) {
+				values.push_back(map);
+			}
+		}
+	}
+	
+	// Add maps from g_map_list (skip duplicates)
+	if (g_map_list->string[0]) {
+		auto list_values = str_split(g_map_list->string, ' ');
+		for (const auto &map : list_values) {
+			if (!map.empty() && !map_exists(map)) {
+				values.push_back(map);
+			}
+		}
+	}
 
 	if (!values.size())
 		return;

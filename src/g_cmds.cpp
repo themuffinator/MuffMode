@@ -2495,15 +2495,55 @@ static bool IsMapValid(const char *mapname) {
 }
 
 static bool Vote_Val_Map(gentity_t *ent) {
+	// Helper function to get combined and deduplicated map list
+	auto get_combined_maps = []() -> std::vector<std::string> {
+		std::vector<std::string> all_maps;
+		char *token;
+		
+		// Helper lambda to check if a map already exists (case-insensitive)
+		auto map_exists = [&all_maps](const char *map) -> bool {
+			for (const auto &existing : all_maps) {
+				if (!Q_strcasecmp(existing.c_str(), map))
+					return true;
+			}
+			return false;
+		};
+		
+		// Add maps from g_map_pool first
+		if (g_map_pool->string[0]) {
+			const char *pool = g_map_pool->string;
+			while (*(token = COM_Parse(&pool))) {
+				if (*token && !map_exists(token)) {
+					all_maps.push_back(token);
+				}
+			}
+		}
+		
+		// Add maps from g_map_list (skip duplicates)
+		if (g_map_list->string[0]) {
+			const char *mlist = g_map_list->string;
+			while (*(token = COM_Parse(&mlist))) {
+				if (*token && !map_exists(token)) {
+					all_maps.push_back(token);
+				}
+			}
+		}
+		
+		return all_maps;
+	};
+
 	if (gi.argc() < 3) {
 		// Show available maps from pool first, then list
 		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
 		std::string map_display;
 
-		if (g_map_pool->string[0]) {
-			map_display = g_map_pool->string;
-		} else if (g_map_list->string[0]) {
-			map_display = g_map_list->string;
+		auto all_maps = get_combined_maps();
+		if (all_maps.size()) {
+			// Sort maps alphabetically (case-insensitive)
+			std::sort(all_maps.begin(), all_maps.end(), [](const std::string &a, const std::string &b) {
+				return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
+			});
+			map_display = join_strings(all_maps, " ");
 		}
 
 		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {
@@ -2524,10 +2564,13 @@ static bool Vote_Val_Map(gentity_t *ent) {
 		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
 		std::string map_display;
 
-		if (g_map_pool->string[0]) {
-			map_display = g_map_pool->string;
-		} else if (g_map_list->string[0]) {
-			map_display = g_map_list->string;
+		auto all_maps = get_combined_maps();
+		if (all_maps.size()) {
+			// Sort maps alphabetically (case-insensitive)
+			std::sort(all_maps.begin(), all_maps.end(), [](const std::string &a, const std::string &b) {
+				return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
+			});
+			map_display = join_strings(all_maps, " ");
 		}
 
 		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {

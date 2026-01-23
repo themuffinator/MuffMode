@@ -1700,8 +1700,9 @@ static void Weapon_Blaster_Fire(gentity_t *ent, const vec3_t &g_offset, int dama
 		speed = hyper ? 1000 : 1500;
 	
 	// Override hyperblaster speed if cvar is set (0 = use default)
-	if (hyper && g_hyperblaster_speed->integer > 0)
-		speed = g_hyperblaster_speed->integer;
+	// DISABLED: Uncomment below to re-enable hyperblaster speed cvar
+	//if (hyper && g_hyperblaster_speed->integer > 0)
+	//	speed = g_hyperblaster_speed->integer;
 
 	fire_blaster(ent, start, dir, damage, speed, effect, hyper ? MOD_HYPERBLASTER : MOD_BLASTER);
 
@@ -1830,8 +1831,9 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 	}
 	
 	// Override damage if cvar is set (0 = use default)
-	if (g_machinegun_damage->integer > 0)
-		damage = g_machinegun_damage->integer;
+	// DISABLED: Uncomment below to re-enable machinegun damage cvar
+	//if (g_machinegun_damage->integer > 0)
+	//	damage = g_machinegun_damage->integer;
 
 	if (!(ent->client->buttons & BUTTON_ATTACK)) {
 		ent->client->ps.gunframe = 6;
@@ -1904,8 +1906,9 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 	float r, u;
 	int	  damage = deathmatch->integer ? 6 : 8;
 	// Override damage if cvar is set (0 = use default)
-	if (g_chaingun_damage->integer > 0)
-		damage = g_chaingun_damage->integer;
+	// DISABLED: Uncomment below to re-enable chaingun damage cvar
+	//if (g_chaingun_damage->integer > 0)
+	//	damage = g_chaingun_damage->integer;
 	int	  kick = 2;
 
 	if (ent->client->ps.gunframe > 31) {
@@ -1952,9 +1955,10 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 		shots = 3;
 	
 	// Apply max shots limit from cvar
-	int max_shots = g_chaingun_max_shots->integer;
-	if (max_shots > 0 && shots > max_shots)
-		shots = max_shots;
+	// DISABLED: Uncomment below to re-enable chaingun max shots cvar
+	//int max_shots = g_chaingun_max_shots->integer;
+	//if (max_shots > 0 && shots > max_shots)
+	//	shots = max_shots;
 
 	if (ent->client->pers.inventory[ent->client->pers.weapon->ammo] < shots)
 		shots = ent->client->pers.inventory[ent->client->pers.weapon->ammo];
@@ -2118,8 +2122,9 @@ static void Weapon_Railgun_Fire(gentity_t *ent) {
 	// normal damage too extreme for DM
 	int damage = deathmatch->integer ? 100 : 150;
 	// Override damage if cvar is set (0 = use default)
-	if (g_railgun_damage->integer > 0)
-		damage = g_railgun_damage->integer;
+	// DISABLED: Uncomment below to re-enable railgun damage cvar
+	//if (g_railgun_damage->integer > 0)
+	//	damage = g_railgun_damage->integer;
 	int kick = !!(RS(RS_MM)) ? (damage * 2) : (deathmatch->integer ? 200 : 225);
 
 	if (is_quad) {
