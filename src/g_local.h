@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.23";
+constexpr const char *GAMEMOD_VERSION = "0.21.25";
 
 //==================================================================
 
@@ -2502,6 +2502,11 @@ extern cvar_t *g_warmup_countdown;
 extern cvar_t *g_warmup_ready_percentage;
 extern cvar_t *g_weapon_projection;
 extern cvar_t *g_weapon_respawn_time;
+extern cvar_t *g_chaingun_max_shots;
+extern cvar_t *g_chaingun_damage;
+extern cvar_t *g_machinegun_damage;
+extern cvar_t *g_hyperblaster_speed;
+extern cvar_t *g_railgun_damage;
 
 extern cvar_t *bot_name_prefix;
 

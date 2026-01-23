@@ -218,6 +218,11 @@ cvar_t *g_warmup_countdown;
 cvar_t *g_warmup_ready_percentage;
 cvar_t *g_weapon_projection;
 cvar_t *g_weapon_respawn_time;
+cvar_t *g_chaingun_max_shots;
+cvar_t *g_chaingun_damage;
+cvar_t *g_machinegun_damage;
+cvar_t *g_hyperblaster_speed;
+cvar_t *g_railgun_damage;
 
 cvar_t *bot_name_prefix;
 
@@ -1060,6 +1065,11 @@ static void InitGame() {
 	g_warmup_ready_percentage = gi.cvar("g_warmup_ready_percentage", "0.51f", CVAR_NOFLAGS);
 	g_weapon_projection = gi.cvar("g_weapon_projection", "0", CVAR_NOFLAGS);
 	g_weapon_respawn_time = gi.cvar("g_weapon_respawn_time", "30", CVAR_NOFLAGS);
+	g_chaingun_max_shots = gi.cvar("g_chaingun_max_shots", "3", CVAR_NOFLAGS);
+	g_chaingun_damage = gi.cvar("g_chaingun_damage", "0", CVAR_NOFLAGS);
+	g_machinegun_damage = gi.cvar("g_machinegun_damage", "0", CVAR_NOFLAGS);
+	g_hyperblaster_speed = gi.cvar("g_hyperblaster_speed", "0", CVAR_NOFLAGS);
+	g_railgun_damage = gi.cvar("g_railgun_damage", "0", CVAR_NOFLAGS);
 
 	bot_name_prefix = gi.cvar("bot_name_prefix", "B|", CVAR_NOFLAGS);
 
