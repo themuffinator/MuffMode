@@ -2454,11 +2454,28 @@ static bool Vote_Val_None(gentity_t *ent) {
 void Vote_Pass_Map() {
 	// Store map name in level.nextmap buffer to avoid dangling pointer
 	// Must copy to safe storage since vote state will be cleared after this function returns
+	
+	if (level.vote_arg.empty()) {
+		gi.Com_Error("Vote_Pass_Map: vote_arg is empty");
+		return;
+	}
+	
 	if (level.vote_arg.length() >= sizeof(level.nextmap)) {
 		gi.Com_Error("Map name too long in vote execution");
 		return;
 	}
+	
 	Q_strlcpy(level.nextmap, level.vote_arg.c_str(), sizeof(level.nextmap));
+	
+	// Validate the copy was successful and the string is valid
+	if (!level.nextmap[0]) {
+		gi.Com_Error("Vote_Pass_Map: Failed to copy map name to nextmap");
+		return;
+	}
+	
+	// Ensure the string is null-terminated
+	level.nextmap[sizeof(level.nextmap) - 1] = '\0';
+	
 	level.changemap = level.nextmap;  // Now points to safe storage
 	ExitLevel();
 }

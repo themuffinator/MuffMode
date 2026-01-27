@@ -218,6 +218,16 @@ cvar_t *g_warmup_countdown;
 cvar_t *g_warmup_ready_percentage;
 cvar_t *g_weapon_projection;
 cvar_t *g_weapon_respawn_time;
+// Weapon balance cvars - declared in both builds, but only initialized in DEBUG
+cvar_t *g_weapon_balance_dev;
+cvar_t *g_chaingun_max_shots;
+cvar_t *g_chaingun_damage;
+cvar_t *g_chaingun_hspread;
+cvar_t *g_chaingun_vspread;
+cvar_t *g_chaingun_spread_offset;
+cvar_t *g_machinegun_damage;
+cvar_t *g_hyperblaster_speed;
+cvar_t *g_railgun_damage;
 
 cvar_t *bot_name_prefix;
 
@@ -1060,6 +1070,30 @@ static void InitGame() {
 	g_warmup_ready_percentage = gi.cvar("g_warmup_ready_percentage", "0.51f", CVAR_NOFLAGS);
 	g_weapon_projection = gi.cvar("g_weapon_projection", "0", CVAR_NOFLAGS);
 	g_weapon_respawn_time = gi.cvar("g_weapon_respawn_time", "30", CVAR_NOFLAGS);
+	
+#ifdef _DEBUG
+	// Weapon balance cvars (DEBUG ONLY - not available in release builds)
+	g_weapon_balance_dev = gi.cvar("g_weapon_balance_dev", "0", CVAR_NOFLAGS);
+	g_chaingun_max_shots = gi.cvar("g_chaingun_max_shots", "0", CVAR_NOFLAGS);
+	g_chaingun_damage = gi.cvar("g_chaingun_damage", "0", CVAR_NOFLAGS);
+	g_chaingun_hspread = gi.cvar("g_chaingun_hspread", "0", CVAR_NOFLAGS);
+	g_chaingun_vspread = gi.cvar("g_chaingun_vspread", "0", CVAR_NOFLAGS);
+	g_chaingun_spread_offset = gi.cvar("g_chaingun_spread_offset", "0", CVAR_NOFLAGS);
+	g_machinegun_damage = gi.cvar("g_machinegun_damage", "0", CVAR_NOFLAGS);
+	g_hyperblaster_speed = gi.cvar("g_hyperblaster_speed", "0", CVAR_NOFLAGS);
+	g_railgun_damage = gi.cvar("g_railgun_damage", "0", CVAR_NOFLAGS);
+#else
+	// In release builds, set pointers to nullptr to prevent undefined references
+	g_weapon_balance_dev = nullptr;
+	g_chaingun_max_shots = nullptr;
+	g_chaingun_damage = nullptr;
+	g_chaingun_hspread = nullptr;
+	g_chaingun_vspread = nullptr;
+	g_chaingun_spread_offset = nullptr;
+	g_machinegun_damage = nullptr;
+	g_hyperblaster_speed = nullptr;
+	g_railgun_damage = nullptr;
+#endif
 
 	bot_name_prefix = gi.cvar("bot_name_prefix", "B|", CVAR_NOFLAGS);
 
@@ -3759,9 +3793,18 @@ void ExitLevel() {
 		return;
 	}
 	
-	// Additional safety check for invalid map names
-	if (!level.changemap[0]) {
-		gi.Com_Error("Got empty changemap when trying to exit level.");
+	// Additional safety check: validate the pointer points to valid memory
+	// Check if it's a reasonable address (not perfect, but helps catch obvious corruption)
+	uintptr_t ptr_val = reinterpret_cast<uintptr_t>(level.changemap);
+	if (ptr_val < 0x1000 || ptr_val > 0x7FFFFFFFFFFF) {
+		gi.Com_ErrorFmt("Got invalid changemap pointer ({:#x}) when trying to exit level.", ptr_val);
+		return;
+	}
+	
+	// Additional safety check for invalid map names - use strlen safely
+	size_t map_len = strlen(level.changemap);
+	if (map_len == 0 || map_len >= MAX_QPATH) {
+		gi.Com_ErrorFmt("Got invalid changemap length ({}) when trying to exit level.", map_len);
 		return;
 	}
 
@@ -3772,9 +3815,9 @@ void ExitLevel() {
 	if (GT(GT_RR) && level.num_playing_clients > 1 && (!level.num_playing_red || !level.num_playing_blue))
 		TeamShuffle();
 
-	if (strlen(level.changemap) > (6 + start_offset) &&
+	if (map_len > (6 + start_offset) &&
 		!Q_strncasecmp(level.changemap + start_offset, "victor", 6) &&
-		!Q_strncasecmp(level.changemap + strlen(level.changemap) - 4, ".pcx", 4))
+		!Q_strncasecmp(level.changemap + map_len - 4, ".pcx", 4))
 		gi.AddCommandString(G_Fmt("endgame \"{}\"\n", level.changemap + start_offset).data());
 	else
 		gi.AddCommandString(G_Fmt("gamemap \"{}\"\n", level.changemap).data());

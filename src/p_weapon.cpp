@@ -1694,12 +1694,21 @@ static void Weapon_Blaster_Fire(gentity_t *ent, const vec3_t &g_offset, int dama
 
 	// let the regular blaster projectiles travel a bit faster because it is a completely useless gun
 	int speed;
-	if (RS(RS_Q3A))
-		speed = hyper ? 2000 : 2500;
-	else if (RS(RS_VANILLA_PLUS))
-		speed = hyper ? 1100 : 1500;
-	else
-		speed = hyper ? 1000 : 1500;
+	// Use dev cvar for hyperblaster speed if enabled, otherwise use ruleset-based defaults
+#ifdef _DEBUG
+	if (hyper && g_weapon_balance_dev && g_weapon_balance_dev->integer && g_hyperblaster_speed && g_hyperblaster_speed->integer > 0) {
+		speed = g_hyperblaster_speed->integer;
+	} else {
+#else
+	{
+#endif
+		if (RS(RS_Q3A))
+			speed = hyper ? 2000 : 2500;
+		else if (RS(RS_VANILLA_PLUS))
+			speed = hyper ? 1100 : 1500;
+		else
+			speed = hyper ? 1000 : 1500;
+	}
 
 	fire_blaster(ent, start, dir, damage, speed, effect, hyper ? MOD_HYPERBLASTER : MOD_BLASTER);
 
@@ -1774,6 +1783,8 @@ static void Weapon_HyperBlaster_Fire(gentity_t *ent) {
 			offset[2] = 0;
 			offset[1] = 4 * cosf(rotation);
 
+			// Use dev cvar if enabled, otherwise use ruleset-based defaults
+			// Note: hyperblaster damage cvar would go here if we add it, but currently only speed is configurable
 			if (RS(RS_Q3A)) {
 				damage = deathmatch->integer ? 20 : 25;
 			} else {
@@ -1817,14 +1828,25 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 	int kick = 2;
 	int vs, hs;
 
-	if (RS(RS_Q3A)) {
-		damage = GT(GT_TDM) ? 5 : 7;
-		vs = 200;
-		hs = 200;
-	} else {
-		damage = 8;
+	// Use dev cvar if enabled, otherwise use ruleset-based defaults
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_machinegun_damage && g_machinegun_damage->integer > 0) {
+		damage = g_machinegun_damage->integer;
 		vs = DEFAULT_BULLET_VSPREAD;
 		hs = DEFAULT_BULLET_HSPREAD;
+	} else {
+#else
+	{
+#endif
+		if (RS(RS_Q3A)) {
+			damage = GT(GT_TDM) ? 5 : 7;
+			vs = 200;
+			hs = 200;
+		} else {
+			damage = 8;
+			vs = DEFAULT_BULLET_VSPREAD;
+			hs = DEFAULT_BULLET_HSPREAD;
+		}
 	}
 
 	if (!(ent->client->buttons & BUTTON_ATTACK)) {
@@ -1897,10 +1919,20 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 	int	  shots;
 	float r, u;
 	int	  damage;
-	if (RS(RS_VANILLA_PLUS))
-		damage = 5;
-	else
-		damage = deathmatch->integer ? 6 : 8;
+	
+	// Use dev cvars if enabled, otherwise use ruleset-based defaults
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_chaingun_damage && g_chaingun_damage->integer > 0) {
+		damage = g_chaingun_damage->integer;
+	} else {
+#else
+	{
+#endif
+		if (RS(RS_VANILLA_PLUS))
+			damage = 5;
+		else
+			damage = deathmatch->integer ? 6 : 8;
+	}
 	int	  kick = 2;
 
 	if (ent->client->ps.gunframe > 31) {
@@ -1936,6 +1968,7 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 	}
 	ent->client->anim_time = 0_ms;
 
+	// Determine shots based on frame, then clamp to max_shots if dev cvar is enabled
 	if (ent->client->ps.gunframe <= 9)
 		shots = 1;
 	else if (ent->client->ps.gunframe <= 14) {
@@ -1945,6 +1978,15 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 			shots = 1;
 	} else
 		shots = 3;
+	
+	// Clamp to max_shots if dev cvar is enabled
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_chaingun_max_shots && g_chaingun_max_shots->integer > 0) {
+		int max_shots = g_chaingun_max_shots->integer;
+		if (shots > max_shots)
+			shots = max_shots;
+	}
+#endif
 	
 	if (ent->client->pers.inventory[ent->client->pers.weapon->ammo] < shots)
 		shots = ent->client->pers.inventory[ent->client->pers.weapon->ammo];
@@ -1970,14 +2012,34 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 	P_ProjectSource(ent, ent->client->v_angle, { 0, 0, -8 }, start, dir);
 
 	G_LagCompensate(ent, start, dir);
+	
+	// Determine spread values and offset
+	int hspread, vspread;
+	float spread_offset;
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer) {
+		hspread = (g_chaingun_hspread && g_chaingun_hspread->integer > 0) ? g_chaingun_hspread->integer : DEFAULT_BULLET_HSPREAD;
+		vspread = (g_chaingun_vspread && g_chaingun_vspread->integer > 0) ? g_chaingun_vspread->integer : DEFAULT_BULLET_VSPREAD;
+		spread_offset = (g_chaingun_spread_offset && g_chaingun_spread_offset->value > 0.0f) ? g_chaingun_spread_offset->value : 4.0f;
+	} else {
+		hspread = DEFAULT_BULLET_HSPREAD;
+		vspread = DEFAULT_BULLET_VSPREAD;
+		spread_offset = 4.0f;
+	}
+#else
+	hspread = DEFAULT_BULLET_HSPREAD;
+	vspread = DEFAULT_BULLET_VSPREAD;
+	spread_offset = 4.0f;
+#endif
+	
 	for (i = 0; i < shots; i++) {
 		// get start / end positions
 		// Paril: kill sideways angle on hitscan
-		r = crandom() * 4;
-		u = crandom() * 4;
+		r = crandom() * spread_offset;
+		u = crandom() * spread_offset;
 		P_ProjectSource(ent, ent->client->v_angle, { 0, r, u + -8 }, start, dir);
 
-		fire_bullet(ent, start, dir, damage, kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_CHAINGUN);
+		fire_bullet(ent, start, dir, damage, kick, hspread, vspread, MOD_CHAINGUN);
 	}
 	G_UnLagCompensate();
 
@@ -2105,8 +2167,18 @@ RAILGUN
 */
 
 static void Weapon_Railgun_Fire(gentity_t *ent) {
-	// normal damage too extreme for DM
-	int damage = deathmatch->integer ? 100 : 150;
+	// Use dev cvar if enabled, otherwise use default values
+	int damage;
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_railgun_damage && g_railgun_damage->integer > 0) {
+		damage = g_railgun_damage->integer;
+	} else {
+#else
+	{
+#endif
+		// normal damage too extreme for DM
+		damage = deathmatch->integer ? 100 : 150;
+	}
 	int kick = !!(RS(RS_MM)) ? (damage * 2) : (deathmatch->integer ? 200 : 225);
 
 	if (is_quad) {

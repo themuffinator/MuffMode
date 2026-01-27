@@ -3934,7 +3934,7 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 			ent->s.event = EV_FALL_MEDIUM;
 			// Send positioned sound for spectators only
 			if (HasSpectators(ent)) {
-				gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+				gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("player/land1.wav"), 1, ATTN_NORM, 0);
 			}
 		}
 		if (!deathmatch->integer || !(g_dm_no_fall_damage->integer || GTF(GTF_ARENA))) {
@@ -3954,7 +3954,7 @@ static void P_FallingDamage(gentity_t *ent, const pmove_t &pm) {
 		ent->s.event = EV_FALL_SHORT;
 		// Send positioned sound for spectators only
 		if (HasSpectators(ent)) {
-			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("world/land.wav"), 1, ATTN_NORM, 0);
+			gi.positioned_sound(ent->s.origin, ent, CHAN_VOICE, gi.soundindex("player/land1.wav"), 1, ATTN_NORM, 0);
 		}
 	}
 
@@ -4014,19 +4014,65 @@ static bool ClientInactivityTimer(gentity_t *ent) {
 		// gameplay, everyone isn't kicked
 		ent->client->sess.inactivity_time = level.time + 1_min;
 		ent->client->sess.inactivity_warning = false;
-	} else if (ent->client->latched_buttons) {
-		ent->client->sess.inactivity_time = level.time + cv;
-		ent->client->sess.inactivity_warning = false;
 	} else {
-		if (level.time > ent->client->sess.inactivity_time) {
-			gi.LocClient_Print(ent, PRINT_CENTER, "You have been removed from the match\ndue to inactivity.\n");
-			SetTeam(ent, TEAM_SPECTATOR, true, true, false);
-			return false;
+		// Check for ANY input activity, not just newly pressed buttons
+		// This prevents false positives when players are actively playing but
+		// only holding movement keys or moving the mouse
+		bool has_input = false;
+		
+		// Check for any button currently pressed
+		if (ent->client->buttons)
+			has_input = true;
+		
+		// Check for movement input (forward/backward or strafe left/right)
+		if (ent->client->cmd.forwardmove != 0 || ent->client->cmd.sidemove != 0)
+			has_input = true;
+		
+		// Check for newly pressed buttons (existing check)
+		if (ent->client->latched_buttons)
+			has_input = true;
+		
+		// Check for view angle changes (mouse movement)
+		// Compare current command angles with previous frame's angles
+		// Use a threshold of 1.0 degree to avoid false positives from tiny movements
+		if (!has_input) {
+			const float angle_threshold = 1.0f;
+			const gvec3_t &current_angles = ent->client->cmd.angles;
+			const vec3_t &prev_angles = ent->client->resp.cmd_angles;
+			
+			// Calculate angular difference for pitch and yaw
+			// Handle angle wrapping by normalizing to -180 to 180 range
+			auto angle_diff = [](float a, float b) -> float {
+				float diff = a - b;
+				// Normalize to -180 to 180 range
+				while (diff > 180.0f)
+					diff -= 360.0f;
+				while (diff < -180.0f)
+					diff += 360.0f;
+				return fabsf(diff);
+			};
+			
+			// Check pitch (index 0) and yaw (index 1) for significant changes
+			if (angle_diff(current_angles[0], prev_angles[0]) > angle_threshold ||
+				angle_diff(current_angles[1], prev_angles[1]) > angle_threshold) {
+				has_input = true;
+			}
 		}
-		if (level.time > ent->client->sess.inactivity_time - gtime_t::from_sec(10) && !ent->client->sess.inactivity_warning) {
-			ent->client->sess.inactivity_warning = true;
-			gi.LocClient_Print(ent, PRINT_CENTER, "Ten seconds until inactivity trigger!\n");	//TODO: "$g_ten_sec_until_drop");
-			gi.local_sound(ent, CHAN_AUTO, gi.soundindex("world/fish.wav"), 1, ATTN_NONE, 0);
+		
+		if (has_input) {
+			ent->client->sess.inactivity_time = level.time + cv;
+			ent->client->sess.inactivity_warning = false;
+		} else {
+			if (level.time > ent->client->sess.inactivity_time) {
+				gi.LocClient_Print(ent, PRINT_CENTER, "You have been removed from the match\ndue to inactivity.\n");
+				SetTeam(ent, TEAM_SPECTATOR, true, true, false);
+				return false;
+			}
+			if (level.time > ent->client->sess.inactivity_time - gtime_t::from_sec(10) && !ent->client->sess.inactivity_warning) {
+				ent->client->sess.inactivity_warning = true;
+				gi.LocClient_Print(ent, PRINT_CENTER, "Ten seconds until inactivity trigger!\n");	//TODO: "$g_ten_sec_until_drop");
+				gi.local_sound(ent, CHAN_AUTO, gi.soundindex("world/fish.wav"), 1, ATTN_NONE, 0);
+			}
 		}
 	}
 
