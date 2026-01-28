@@ -4,6 +4,8 @@
 #include "monsters/m_player.h"
 
 #include <assert.h>
+#include <algorithm>
+#include <cctype>
 
 constexpr const char *BREAKER = "\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37";
 
@@ -433,17 +435,17 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p);
 const menu_t pmcallvotemenu[] = {
 	{ "Call a Vote", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
-	{ "change map", MENU_ALIGN_LEFT, G_Menu_CallVote_Map },
-	{ "go to next map", MENU_ALIGN_LEFT, G_Menu_CallVote_NextMap },
-	{ "restart match", MENU_ALIGN_LEFT, G_Menu_CallVote_Restart },
-	{ "change gametype", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType },
-	{ "change time limit", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit },
-	{ "change score limit", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit },
-	{ "shuffle teams", MENU_ALIGN_LEFT, G_Menu_CallVote_ShuffleTeams },
-	{ "balance teams", MENU_ALIGN_LEFT, G_Menu_CallVote_BalanceTeams },
-	{ "lag compensation", MENU_ALIGN_LEFT, G_Menu_CallVote_Unlagged },
-	{ "generate heads/tails", MENU_ALIGN_LEFT, G_Menu_CallVote_Cointoss },
-	{ "generate random number", MENU_ALIGN_LEFT, G_Menu_CallVote_Random },
+	{ "Map", MENU_ALIGN_LEFT, G_Menu_CallVote_Map },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
@@ -493,30 +495,6 @@ const menu_t pmcallvotemenu_timelimit[] = {
 	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
 };
 
-void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
-	vcmds_t *cc = FindVoteCmdByName("map");
-	if (!cc) {
-		gi.Com_PrintFmt("{}: missing map vote command.\n", __FUNCTION__);
-		return;
-	}
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid map selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	const menu_t &selected = p->entries[p->cur];
-	if (!selected.text[0]) {
-		gi.Com_PrintFmt("{}: no map selected.\n", __FUNCTION__);
-		return;
-	}
-
-	level.vote = cc;
-	level.vote_arg = selected.text;
-
-	VoteCommandStore(ent);
-	P_Menu_Close(ent);
-}
-
 inline std::vector<std::string> str_split(const std::string_view &str, char by) {
 	std::vector<std::string> out;
 	size_t start = 0;
@@ -537,6 +515,78 @@ inline std::vector<std::string> str_split(const std::string_view &str, char by) 
 	}
 
 	return out;
+}
+
+void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
+	vcmds_t *cc = FindVoteCmdByName("map");
+	if (!cc) {
+		gi.Com_PrintFmt("{}: missing map vote command.\n", __FUNCTION__);
+		return;
+	}
+	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
+		gi.Com_PrintFmt("{}: invalid map selection index.\n", __FUNCTION__);
+		return;
+	}
+
+	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
+	// while we read the selection. Store it so we can restore if needed.
+	UpdateFunc_t saved_update_func = p->UpdateFunc;
+	p->UpdateFunc = nullptr;
+
+	int cur_index = p->cur;
+	
+	// Validate index is still valid
+	if (cur_index < 0 || cur_index >= p->num) {
+		p->UpdateFunc = saved_update_func;  // Restore before returning
+		gi.Com_PrintFmt("{}: map selection index became invalid.\n", __FUNCTION__);
+		return;
+	}
+	
+	// Read the original map name from text_arg1 (stored when menu was populated)
+	// This avoids any case-insensitive lookup issues
+	char original_map_name[64];
+	Q_strlcpy(original_map_name, p->entries[cur_index].text_arg1, sizeof(original_map_name));
+	
+	// Restore UpdateFunc now that we've read the value
+	p->UpdateFunc = saved_update_func;
+	
+	if (!original_map_name[0]) {
+		gi.Com_PrintFmt("{}: no map selected.\n", __FUNCTION__);
+		return;
+	}
+
+	// Validate the map name is reasonable (not corrupted) - check C string first
+	size_t map_name_len = strlen(original_map_name);
+	if (map_name_len == 0 || map_name_len > 64) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid map name selected.\n");
+		return;
+	}
+	
+	// Check for invalid characters in C string
+	if (strpbrk(original_map_name, "/\\:?*\"<>|") != nullptr) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
+		return;
+	}
+	
+	// Make a second C string copy for extra safety before closing menu
+	char map_name_final[64];
+	Q_strlcpy(map_name_final, original_map_name, sizeof(map_name_final));
+	
+	// Close menu FIRST to prevent any menu operations from interfering
+	P_Menu_Close(ent);
+	
+	// Convert to std::string AFTER menu is closed - this should be safe
+	std::string map_name_std;
+	map_name_std.reserve(64);
+	map_name_std.assign(map_name_final, strlen(map_name_final));
+	
+	// Now set vote data - use explicit assignment
+	level.vote = cc;
+	level.vote_arg.clear();
+	level.vote_arg.reserve(64);
+	level.vote_arg.assign(map_name_std.c_str(), map_name_std.length());
+
+	VoteCommandStore(ent);
 }
 
 static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
@@ -583,10 +633,18 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 	for (i = 2; i < 15; i++) {
 		entries[i].SelectFunc = nullptr;
 		entries[i].text[0] = '\0';
+		entries[i].text_arg1[0] = '\0';  // Clear stored original map name
 	}
 
 	for (num = 0, i = 2; num < values.size() && num < 15; num++, i++) {
-		Q_strlcpy(entries[i].text, values[num].c_str(), sizeof(entries[i].text));
+		// Store original case in text_arg1 for later retrieval
+		Q_strlcpy(entries[i].text_arg1, values[num].c_str(), sizeof(entries[i].text_arg1));
+		
+		// Convert map name to uppercase for display
+		std::string display_name = values[num];
+		std::transform(display_name.begin(), display_name.end(), display_name.begin(),
+			[](unsigned char c) { return std::toupper(c); });
+		Q_strlcpy(entries[i].text, display_name.c_str(), sizeof(entries[i].text));
 		entries[i].SelectFunc = G_Menu_CallVote_Map_Selection;
 	}
 }
@@ -597,17 +655,17 @@ void G_Menu_CallVote_Map(gentity_t *ent, menu_hnd_t *p) {
 }
 
 void G_Menu_CallVote_NextMap(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
 	level.vote = FindVoteCmdByName("nextmap");
 	level.vote_arg.clear();
 	VoteCommandStore(ent);
-	P_Menu_Close(ent);
 }
 
 void G_Menu_CallVote_Restart(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
 	level.vote = FindVoteCmdByName("restart");
 	level.vote_arg.clear();
 	VoteCommandStore(ent);
-	P_Menu_Close(ent);
 }
 
 void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p) {
@@ -632,18 +690,17 @@ void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p) {
 }
 
 void G_Menu_CallVote_ShuffleTeams(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
 	level.vote = FindVoteCmdByName("shuffle");
 	level.vote_arg.clear();
 	VoteCommandStore(ent);
-	P_Menu_Close(ent);
 }
 
 void G_Menu_CallVote_BalanceTeams(gentity_t *ent, menu_hnd_t *p) {
-	level.vote = FindVoteCmdByName("balance");
-	level.vote_arg = nullptr;
-	VoteCommandStore(ent);
 	P_Menu_Close(ent);
-
+	level.vote = FindVoteCmdByName("balance");
+	level.vote_arg.clear();
+	VoteCommandStore(ent);
 }
 
 void G_Menu_CallVote_Unlagged(gentity_t *ent, menu_hnd_t *p) {
@@ -651,10 +708,10 @@ void G_Menu_CallVote_Unlagged(gentity_t *ent, menu_hnd_t *p) {
 }
 
 void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
 	level.vote = FindVoteCmdByName("cointoss");
 	level.vote_arg.clear();
 	VoteCommandStore(ent);
-	P_Menu_Close(ent);
 }
 
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p) {
@@ -878,9 +935,9 @@ const menu_t teams_join_menu[] = {
 	{ "Match Info", MENU_ALIGN_LEFT, G_Menu_ServerInfo },
 	//{ "Game Rules", MENU_ALIGN_LEFT, G_Menu_GameRules },
 	{ "Player Stats", MENU_ALIGN_LEFT, G_Menu_PMStats },
-	//{ "Call a Vote", MENU_ALIGN_LEFT, G_Menu_CallVote },
+	{ "Call a Vote", MENU_ALIGN_LEFT, G_Menu_CallVote },
 	{ "", MENU_ALIGN_LEFT, nullptr },
-	{ "Admin", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr }
@@ -901,9 +958,9 @@ const menu_t free_join_menu[] = {
 	{ "Match Info", MENU_ALIGN_LEFT, G_Menu_ServerInfo },
 	//{ "Game Rules", MENU_ALIGN_LEFT, G_Menu_GameRules },
 	{ "Player Stats", MENU_ALIGN_LEFT, G_Menu_PMStats },
-	//{ "Call a Vote", MENU_ALIGN_LEFT,  G_Menu_CallVote },
+	{ "Call a Vote", MENU_ALIGN_LEFT, G_Menu_CallVote },
 	{ "", MENU_ALIGN_CENTER, nullptr },
-	{ "Admin", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr }
@@ -1339,6 +1396,16 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 		entries[index].SelectFunc = G_Menu_PMStats;
 	}
 
+	if (!g_allow_voting->integer) {
+		int index = Teams() ? jmenu_teams_callvote : jmenu_free_callvote;
+		Q_strlcpy(entries[index].text, "", sizeof(entries[index].text));
+		entries[index].SelectFunc = nullptr;
+	} else {
+		int index = Teams() ? jmenu_teams_callvote : jmenu_free_callvote;
+		Q_strlcpy(entries[index].text, "Call a Vote", sizeof(entries[index].text));
+		entries[index].SelectFunc = G_Menu_CallVote;
+	}
+
 	if (g_dm_force_join->string && *g_dm_force_join->string) {
 		if (Teams()) {
 			if (Q_strcasecmp(g_dm_force_join->string, "red") == 0) {
@@ -1390,6 +1457,7 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 	int admin_index = Teams() ? jmenu_teams_admin : jmenu_free_admin;
 	if (ent->client->sess.admin) {
 		Q_strlcpy(entries[admin_index].text, "Admin", sizeof(entries[admin_index].text));
+		entries[admin_index].align = MENU_ALIGN_LEFT;
 		entries[admin_index].SelectFunc = G_Menu_Admin;
 	} else {
 		Q_strlcpy(entries[admin_index].text, "", sizeof(entries[admin_index].text));
