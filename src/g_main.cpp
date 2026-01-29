@@ -2288,8 +2288,8 @@ static void CheckVote(void) {
 		if (level.time > level.vote_execute_time) {
 			// Safety check: if vote state was cleared, try to recover if possible
 			if (!level.vote) {
-				// Only attempt recovery for map votes by checking if vote_arg is a valid map name
-				// Since "callvote map <mapname>" is the only map vote command, we can verify by checking g_map_list
+				// First, attempt recovery for map votes by checking if vote_arg is a valid map name.
+				// Since "callvote map <mapname>" is the only map vote command, we can verify by checking g_map_list.
 				bool is_valid_map = false;
 				if (!level.vote_arg.empty() && g_map_list->string[0]) {
 					char *token;
@@ -2301,7 +2301,7 @@ static void CheckVote(void) {
 						}
 					}
 				}
-				
+
 				if (is_valid_map) {
 					gi.Com_PrintFmt("Vote state was cleared but recovering map change to: {}\n", level.vote_arg);
 					// Store in level.nextmap buffer to avoid dangling pointer
@@ -2321,14 +2321,41 @@ static void CheckVote(void) {
 					level.changemap = level.nextmap;  // Safe pointer
 					ExitLevel();
 					return;
-				} else {
-					gi.Com_PrintFmt("Vote execution cancelled: vote state was cleared and cannot recover command (was likely a non-map vote).\n");
-					level.vote_execute_time = 0_sec;
-					level.vote_time = 0_sec;
-					level.vote_client = nullptr;
-					level.vote_arg.clear();
-					return;
 				}
+
+				// If not a map vote, attempt safe recovery for simple numeric votes such as "scorelimit".
+				// These are identified by a purely numeric vote_arg which is within a sane range.
+				if (!level.vote_arg.empty()) {
+					const char *arg = level.vote_arg.c_str();
+					char *endptr = nullptr;
+					long value = strtol(arg, &endptr, 10);
+
+					// Accept only strictly numeric values with no trailing junk and within [0, 9999].
+					if (endptr && *endptr == '\0' && value >= 0 && value <= 9999) {
+						gi.Com_PrintFmt("Vote state was cleared but recovering numeric vote with value: {}\n", level.vote_arg);
+
+						// Apply scorelimit vote directly using existing helper, so any messaging/cvar logic stays centralized.
+						// This mirrors what would have happened via Vote_Passed -> Vote_Pass_Scorelimit.
+						level.vote_execute_time = 0_sec;
+						level.vote_time = 0_sec;
+						level.vote_client = nullptr;
+
+						// Vote_Pass_Scorelimit reads level.vote_arg and applies the cvar.
+						Vote_Pass_Scorelimit();
+
+						// Clear arg afterwards to avoid confusing any subsequent logic.
+						level.vote_arg.clear();
+						return;
+					}
+				}
+
+				// If we get here, we couldn't safely recover this non-map vote.
+				gi.Com_PrintFmt("Vote execution cancelled: vote state was cleared and cannot recover command (was likely a non-map vote).\n");
+				level.vote_execute_time = 0_sec;
+				level.vote_time = 0_sec;
+				level.vote_client = nullptr;
+				level.vote_arg.clear();
+				return;
 			}
 			Vote_Passed();
 		}

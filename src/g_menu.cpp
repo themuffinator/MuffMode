@@ -4,8 +4,6 @@
 #include "monsters/m_player.h"
 
 #include <assert.h>
-#include <algorithm>
-#include <cctype>
 
 constexpr const char *BREAKER = "\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37";
 
@@ -423,7 +421,10 @@ void G_Menu_CallVote_Restart(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_TimeLimit_Update(gentity_t *ent);
 void G_Menu_CallVote_TimeLimit(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_TimeLimit_Selection(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_ScoreLimit_Update(gentity_t *ent);
 void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_ScoreLimit_Selection(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_ShuffleTeams(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_BalanceTeams(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_Unlagged(gentity_t *ent, menu_hnd_t *p);
@@ -435,7 +436,7 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p);
 const menu_t pmcallvotemenu[] = {
 	{ "Call a Vote", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
-	{ "Map", MENU_ALIGN_LEFT, G_Menu_CallVote_Map },
+	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
@@ -475,22 +476,43 @@ const menu_t pmcallvotemenu_map[] = {
 };
 
 const menu_t pmcallvotemenu_timelimit[] = {
-	{ "Select Time Limit (mins)", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
-	{ "5", MENU_ALIGN_LEFT, nullptr },
-	{ "10", MENU_ALIGN_LEFT, nullptr },
-	{ "15", MENU_ALIGN_LEFT, nullptr },
-	{ "20", MENU_ALIGN_LEFT, nullptr },
-	{ "25", MENU_ALIGN_LEFT, nullptr },
-	{ "30", MENU_ALIGN_LEFT, nullptr },
-	{ "35", MENU_ALIGN_LEFT, nullptr },
-	{ "40", MENU_ALIGN_LEFT, nullptr },
-	{ "45", MENU_ALIGN_LEFT, nullptr },
-	{ "50", MENU_ALIGN_LEFT, nullptr },
-	{ "55", MENU_ALIGN_LEFT, nullptr },
-	{ "60", MENU_ALIGN_LEFT, nullptr },
-	{ "120", MENU_ALIGN_LEFT, nullptr },
-	{ "150", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_CENTER, nullptr },
+	{ "0",  MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "5",  MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "10", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "15", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "20", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "25", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "30", MENU_ALIGN_LEFT, G_Menu_CallVote_TimeLimit_Selection },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+};
+
+const menu_t pmcallvotemenu_scorelimit[] = {
+	{ "", MENU_ALIGN_CENTER, nullptr },
+	{ "", MENU_ALIGN_CENTER, nullptr },
+	{ "0", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "5", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "10", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "20", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "30", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "40", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "50", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "100", MENU_ALIGN_LEFT, G_Menu_CallVote_ScoreLimit_Selection },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
 };
@@ -580,6 +602,12 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 	map_name_std.reserve(64);
 	map_name_std.assign(map_name_final, strlen(map_name_final));
 	
+	// Check if spectator is allowed to vote
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	
 	// Now set vote data - use explicit assignment
 	level.vote = cc;
 	level.vote_arg.clear();
@@ -640,11 +668,8 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 		// Store original case in text_arg1 for later retrieval
 		Q_strlcpy(entries[i].text_arg1, values[num].c_str(), sizeof(entries[i].text_arg1));
 		
-		// Convert map name to uppercase for display
-		std::string display_name = values[num];
-		std::transform(display_name.begin(), display_name.end(), display_name.begin(),
-			[](unsigned char c) { return std::toupper(c); });
-		Q_strlcpy(entries[i].text, display_name.c_str(), sizeof(entries[i].text));
+		// Display map name in original case
+		Q_strlcpy(entries[i].text, values[num].c_str(), sizeof(entries[i].text));
 		entries[i].SelectFunc = G_Menu_CallVote_Map_Selection;
 	}
 }
@@ -673,8 +698,89 @@ void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p) {
 }
 
 void G_Menu_CallVote_TimeLimit_Update(gentity_t *ent) {
+	menu_t *entries = ent->client->menu->entries;
 
+	// Set the title
+	Q_strlcpy(entries[0].text, "Select Time Limit (mins)", sizeof(entries[0].text));
+
+	// Populate time values and store the raw numeric string in text_arg1,
+	// so the selection handler can reliably read it even on first use.
+	static const char *time_values[] = { "0", "5", "10", "15", "20", "25", "30" };
+	const int first_index = 2; // index of "0" in pmcallvotemenu_timelimit
+	const int num_values = (int)(sizeof(time_values) / sizeof(time_values[0]));
+
+	for (int i = 0; i < num_values; ++i) {
+		int idx = first_index + i;
+		Q_strlcpy(entries[idx].text,      time_values[i], sizeof(entries[idx].text));
+		Q_strlcpy(entries[idx].text_arg1, time_values[i], sizeof(entries[idx].text_arg1));
+		// SelectFunc comes from the static template, no need to touch it here.
+	}
+}
+
+void G_Menu_CallVote_TimeLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
+	// Check if spectator is allowed to vote
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+
+	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
+		gi.Com_PrintFmt("{}: invalid time limit selection index.\n", __FUNCTION__);
+		return;
+	}
+
+	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
+	// while we read the selection. Store it so we can restore if needed.
+	UpdateFunc_t saved_update_func = p->UpdateFunc;
+	p->UpdateFunc = nullptr;
+
+	// Read the selected value IMMEDIATELY - copy to local stack buffer first for safety
+	char time_value[64];
+	int cur_index = p->cur;
+
+	// Validate index is still valid
+	if (cur_index < 0 || cur_index >= p->num) {
+		p->UpdateFunc = saved_update_func;  // Restore before returning
+		gi.Com_PrintFmt("{}: time limit selection index became invalid.\n", __FUNCTION__);
+		return;
+	}
+
+	// Copy the stored raw value (text_arg1) immediately to local buffer
+	// to prevent any corruption and to avoid depending on display text.
+	Q_strlcpy(time_value, p->entries[cur_index].text_arg1, sizeof(time_value));
+
+	// Restore UpdateFunc now that we've read the value
+	p->UpdateFunc = saved_update_func;
+
+	if (!time_value[0]) {
+		gi.Com_PrintFmt("{}: no time limit selected.\n", __FUNCTION__);
+		return;
+	}
+
+	// Validate the value is a number (minutes, 0 allowed)
+	int value = strtoul(time_value, nullptr, 10);
+	if (value < 0) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid time limit value.\n");
+		return;
+	}
+
+	// Make a second C string copy for extra safety before closing menu
+	char time_value_final[64];
+	Q_strlcpy(time_value_final, time_value, sizeof(time_value_final));
+
+	// Close menu FIRST to prevent any menu operations from interfering
+	P_Menu_Close(ent);
+
+	// Convert to std::string AFTER menu is closed - this should be safe
+	std::string time_value_std = time_value_final;
+
+	// Set vote data – mirror the scorelimit/map vote logic for consistency
+	level.vote = FindVoteCmdByName("timelimit");
 	level.vote_arg.clear();
+	level.vote_arg.reserve(16);
+	level.vote_arg.assign(time_value_std.c_str(), time_value_std.length());
+
+	VoteCommandStore(ent);
 }
 
 void G_Menu_CallVote_TimeLimit(gentity_t *ent, menu_hnd_t *p) {
@@ -685,8 +791,103 @@ void G_Menu_CallVote_TimeLimit(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Open(ent, pmcallvotemenu_timelimit, -1, sizeof(pmcallvotemenu_timelimit) / sizeof(menu_t), nullptr, G_Menu_CallVote_TimeLimit_Update);
 }
 
-void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p) {
+void G_Menu_CallVote_ScoreLimit_Update(gentity_t *ent) {
+	menu_t *entries = ent->client->menu->entries;
 
+	// Set the title
+	Q_strlcpy(entries[0].text, "Select Score Limit", sizeof(entries[0].text));
+
+	// Populate score values and store the raw numeric string in text_arg1,
+	// so the selection handler can reliably read it even on first use.
+	static const char *score_values[] = { "0", "5", "10", "20", "30", "40", "50", "100" };
+	const int first_index = 2; // index of "0" in pmcallvotemenu_scorelimit
+	const int num_values = (int)(sizeof(score_values) / sizeof(score_values[0]));
+
+	for (int i = 0; i < num_values; ++i) {
+		int idx = first_index + i;
+		Q_strlcpy(entries[idx].text,      score_values[i], sizeof(entries[idx].text));
+		Q_strlcpy(entries[idx].text_arg1, score_values[i], sizeof(entries[idx].text_arg1));
+		// SelectFunc comes from the static template, no need to touch it here.
+	}
+
+}
+
+void G_Menu_CallVote_ScoreLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
+	// Check if spectator is allowed to vote
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	
+	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
+		gi.Com_PrintFmt("{}: invalid score limit selection index.\n", __FUNCTION__);
+		return;
+	}
+
+	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
+	// while we read the selection. Store it so we can restore if needed.
+	UpdateFunc_t saved_update_func = p->UpdateFunc;
+	p->UpdateFunc = nullptr;
+
+	// Read the selected value IMMEDIATELY - copy to local stack buffer first for safety
+	char limit_value[64];
+	int cur_index = p->cur;
+	
+	// Validate index is still valid
+	if (cur_index < 0 || cur_index >= p->num) {
+		p->UpdateFunc = saved_update_func;  // Restore before returning
+		gi.Com_PrintFmt("{}: score limit selection index became invalid.\n", __FUNCTION__);
+		return;
+	}
+	
+	// Copy the stored raw value (text_arg1) immediately to local buffer
+	// to prevent any corruption and to avoid depending on display text.
+	Q_strlcpy(limit_value, p->entries[cur_index].text_arg1, sizeof(limit_value));
+	
+	// Restore UpdateFunc now that we've read the value
+	p->UpdateFunc = saved_update_func;
+	
+	if (!limit_value[0]) {
+		gi.Com_PrintFmt("{}: no score limit selected.\n", __FUNCTION__);
+		return;
+	}
+
+	// Validate the value is a number
+	int value = strtoul(limit_value, nullptr, 10);
+	if (value < 0) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid score limit value.\n");
+		return;
+	}
+
+	// Make a second C string copy for extra safety before closing menu
+	char limit_value_final[64];
+	Q_strlcpy(limit_value_final, limit_value, sizeof(limit_value_final));
+	
+	// Close menu FIRST to prevent any menu operations from interfering
+	P_Menu_Close(ent);
+	
+	// Convert to std::string AFTER menu is closed - this should be safe
+	std::string limit_value_std = limit_value_final;
+	
+	// Set vote data – mirror the map vote logic so the backing storage and
+	// lifetime are identical and cannot be clobbered on first use.
+	level.vote = FindVoteCmdByName("scorelimit");
+	level.vote_arg.clear();
+	level.vote_arg.reserve(16);
+	level.vote_arg.assign(limit_value_std.c_str(), limit_value_std.length());
+
+	VoteCommandStore(ent);
+}
+
+void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p) {
+	// Check if spectator is allowed to vote
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	
+	P_Menu_Close(ent);
+	P_Menu_Open(ent, pmcallvotemenu_scorelimit, -1, sizeof(pmcallvotemenu_scorelimit) / sizeof(menu_t), nullptr, G_Menu_CallVote_ScoreLimit_Update);
 }
 
 void G_Menu_CallVote_ShuffleTeams(gentity_t *ent, menu_hnd_t *p) {
@@ -720,37 +921,57 @@ void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p) {
 
 static void G_Menu_CallVote_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
-	int i = 0;
-
-	Q_strlcpy(entries[i].text, "Call a Vote", sizeof(entries[i].text));
-	i++;
-	i++;
-	/*
+	
+	// Clear all entries first
+	for (int i = 0; i < 15; i++) {
+		entries[i].SelectFunc = nullptr;
+		entries[i].text[0] = '\0';
+	}
+	
+	// Set title
+	Q_strlcpy(entries[0].text, "Call a Vote", sizeof(entries[0].text));
+	
+	// Map option - show current map name
 	entries[cvmenu_map].SelectFunc = G_Menu_CallVote_Map;
-	i++;
-	entries[cvmenu_nextmap].SelectFunc = G_Menu_CallVote_NextMap;
-	i++;
-	entries[cvmenu_restart].SelectFunc = G_Menu_CallVote_Restart;
-	i++;
-	entries[cvmenu_gametype].SelectFunc = G_Menu_CallVote_GameType;
-	i++;
-	entries[cvmenu_timelimit].SelectFunc = G_Menu_CallVote_TimeLimit;
-	i++;
-	entries[cvmenu_scorelimit].SelectFunc = G_Menu_CallVote_ScoreLimit;
-	i++;
-	entries[cvmenu_shuffle].SelectFunc = G_Menu_CallVote_ShuffleTeams;
-	i++;
-	entries[cvmenu_balance].SelectFunc = G_Menu_CallVote_BalanceTeams;
-	i++;
-	entries[cvmenu_unlagged].SelectFunc = G_Menu_CallVote_Unlagged;
-	i++;
-	entries[cvmenu_cointoss].SelectFunc = G_Menu_CallVote_Cointoss;
-	i++;
-	entries[cvmenu_random].SelectFunc = G_Menu_CallVote_Random;
-	*/
+	if (level.mapname[0]) {
+		Q_strlcpy(entries[cvmenu_map].text, G_Fmt("Map:\t\t {}", level.mapname).data(), sizeof(entries[cvmenu_map].text));
+	} else {
+		Q_strlcpy(entries[cvmenu_map].text, "Map", sizeof(entries[cvmenu_map].text));
+	}
+	
+	// Scorelimit option - show current scorelimit value, place directly after Map
+	int scorelimit_index = cvmenu_map + 1;  // Place right after Map
+	entries[scorelimit_index].SelectFunc = G_Menu_CallVote_ScoreLimit;
+	int current_scorelimit = GT_ScoreLimit();
+	if (current_scorelimit > 0) {
+		Q_strlcpy(entries[scorelimit_index].text, G_Fmt("Scorelimit: {}", current_scorelimit).data(), sizeof(entries[scorelimit_index].text));
+	} else {
+		Q_strlcpy(entries[scorelimit_index].text, "Scorelimit:  0", sizeof(entries[scorelimit_index].text));
+	}
+
+	// Timelimit option - show current timelimit value (minutes), placed after scorelimit
+	int timelimit_index = scorelimit_index + 1;
+	entries[timelimit_index].SelectFunc = G_Menu_CallVote_TimeLimit;
+	int current_timelimit = (int)timelimit->value;
+	if (current_timelimit > 0) {
+		Q_strlcpy(entries[timelimit_index].text, G_Fmt("Time limit: {} min", current_timelimit).data(), sizeof(entries[timelimit_index].text));
+	} else {
+		Q_strlcpy(entries[timelimit_index].text, "Time limit:  0", sizeof(entries[timelimit_index].text));
+	}
+	
+	// Clear any entries after timelimit
+	for (int i = timelimit_index + 1; i < 15; i++) {
+		entries[i].SelectFunc = nullptr;
+		entries[i].text[0] = '\0';
+	}
 }
 
 static void G_Menu_CallVote(gentity_t *ent, menu_hnd_t *p) {
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu, -1, sizeof(pmcallvotemenu) / sizeof(menu_t), nullptr, G_Menu_CallVote_Update);
 }
