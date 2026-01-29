@@ -675,8 +675,15 @@ void ChangeGametype(gametype_t gt) {
 		gi.cvar_forceset("deathmatch", "1");
 	}
 
-	if ((int)gt != g_gametype->integer)
+	if ((int)gt != g_gametype->integer) {
 		gi.cvar_forceset("g_gametype", G_Fmt("{}", (int)gt).data());
+		
+		// Execute gametype-specific cfg when gametype actually changes
+		// This ensures cfg runs on gametype change, not on every map load
+		if (g_gametype_cfg->integer && deathmatch->integer) {
+			gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[(int)gt]).data());
+		}
+	}
 }
 
 int gt_teamplay = 0;
@@ -1156,10 +1163,9 @@ static void InitGame() {
 	if (g_dm_exec_level_cfg->integer)
 		gi.AddCommandString(G_Fmt("exec {}\n", level.mapname).data());
 
-	if (g_gametype_cfg->integer && deathmatch->integer) {
-		//gi.Com_PrintFmt("exec gt-{}.cfg\n", gt_short_name_upper[g_gametype->integer]);
-		gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[g_gametype->integer]).data());
-	}
+	// Note: Gametype cfg execution moved to ChangeGametype() so it only runs
+	// when gametype actually changes, not on every map load. This prevents
+	// cfg files from overriding player votes and map progression.
 
 	// Shuffle map list once on initialization if enabled
 	G_ShuffleMapListOnce();

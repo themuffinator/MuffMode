@@ -2837,6 +2837,71 @@ static bool Vote_Val_BalanceTeams(gentity_t *ent) {
 	return true;
 }
 
+static void Vote_Pass_Powerups() {
+	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	
+	gi.LocBroadcast_Print(PRINT_HIGH, "Powerups have been {}.\n", argi ? "ENABLED" : "DISABLED");
+
+	gi.cvar_forceset("g_no_powerups", argi ? "0" : "1");
+	
+	// Restart the map so powerup changes take effect immediately
+	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
+}
+
+static void Vote_Pass_FriendlyFire() {
+	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	
+	gi.LocBroadcast_Print(PRINT_HIGH, "Friendly fire has been {}.\n", argi ? "ENABLED" : "DISABLED");
+
+	gi.cvar_forceset("g_friendly_fire", argi ? "1" : "0");
+	
+	// Restart the map so friendly fire changes take effect immediately
+	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
+}
+
+static bool Vote_Val_FriendlyFire(gentity_t *ent) {
+	if (notGT(GT_TDM) && notGT(GT_CTF)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Friendly fire can only be changed in TDM or CTF gametypes.\n");
+		return false;
+	}
+
+	int arg = strtoul(gi.argv(2), nullptr, 10);
+	
+	if (arg != 0 && arg != 1) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid argument. Use 0 to disable or 1 to enable friendly fire.\n");
+		return false;
+	}
+	
+	bool currently_enabled = g_friendly_fire->integer != 0;
+	bool will_be_enabled = (arg == 1);
+	
+	if (currently_enabled == will_be_enabled) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Friendly fire is already {}.\n", will_be_enabled ? "ENABLED" : "DISABLED");
+		return false;
+	}
+
+	return true;
+}
+
+static bool Vote_Val_Powerups(gentity_t *ent) {
+	int arg = strtoul(gi.argv(2), nullptr, 10);
+	
+	if (arg != 0 && arg != 1) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid argument. Use 0 to disable or 1 to enable powerups.\n");
+		return false;
+	}
+	
+	bool currently_disabled = g_no_powerups->integer != 0;
+	bool will_be_disabled = (arg == 0);
+	
+	if (currently_disabled == will_be_disabled) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Powerups are already {}.\n", will_be_disabled ? "DISABLED" : "ENABLED");
+		return false;
+	}
+
+	return true;
+}
+
 vcmds_t vote_cmds[] = {
 	{"map",					Vote_Val_Map,			Vote_Pass_Map,			1,		2,	"[mapname]",						"changes to the specified map"},
 	{"nextmap",				Vote_Val_None,			Vote_Pass_NextMap,		2,		1,	"",									"move to the next map in the rotation"},
@@ -2851,6 +2916,8 @@ vcmds_t vote_cmds[] = {
 	{"random",				Vote_Val_Random,		Vote_Pass_Random,		512,	1,	"<2-100>",							"randomly selects a number from 2 to specified value"},
 	{"balance",				Vote_Val_BalanceTeams,	Vote_Pass_BalanceTeams,	1024,	1,	"",									"balance teams without shuffling"},
 	{"ruleset",				Vote_Val_Ruleset,		Vote_Pass_Ruleset,		2048,	2,	"<q2re|mm|q3a>",					"changes the current ruleset"},
+	{"powerups",				Vote_Val_Powerups,		Vote_Pass_Powerups,		4096,	2,	"<0/1>",							"enables or disables powerups"},
+	{"friendlyfire",			Vote_Val_FriendlyFire,	Vote_Pass_FriendlyFire,	8192,	2,	"<0/1>",							"enables or disables friendly fire (team modes only)"},
 };
 
 /*
