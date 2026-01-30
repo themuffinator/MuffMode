@@ -1459,7 +1459,7 @@ void G_SetStats(gentity_t *ent) {
 	int				cells = 0;
 	item_id_t		power_armor_type;
 	unsigned int	invIndex;
-	bool			minhud = g_instagib->integer || g_nadefest->integer;
+	bool			minhud = (g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST));
 	int32_t			img_index = ent->client->pers.skin_icon_index;
 
 	//

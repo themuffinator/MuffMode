@@ -227,10 +227,12 @@ enum gametype_t {
 	GT_LMS,
 	GT_HORDE,
 	GT_BALL,
+	GT_INSTAGIB,
+	GT_NADEFEST,
 	GT_NUM_GAMETYPES
 };
 constexpr gametype_t GT_FIRST = GT_FFA;
-constexpr gametype_t GT_LAST = GT_BALL;
+constexpr gametype_t GT_LAST = GT_NADEFEST;
 
 enum gtf_t {
 	GTF_TEAMS	= 0x01,
@@ -259,7 +261,9 @@ constexpr const char *gt_short_name[GT_NUM_GAMETYPES] = {
 	"rr",
 	"lms",
 	"horde",
-	"ball"
+	"ball",
+	"instagib",
+	"nadefest"
 };
 constexpr const char *gt_short_name_upper[GT_NUM_GAMETYPES] = {
 	"CMP",
@@ -274,6 +278,8 @@ constexpr const char *gt_short_name_upper[GT_NUM_GAMETYPES] = {
 	"LMS",
 	"HORDE",
 	"BALL",
+	"INSTAGIB",
+	"NADEFEST",
 };
 constexpr const char *gt_long_name[GT_NUM_GAMETYPES] = {
 	"Campaign",
@@ -287,7 +293,9 @@ constexpr const char *gt_long_name[GT_NUM_GAMETYPES] = {
 	"Red Rover",
 	"Last Man Standing",
 	"Horde Mode",
-	"ProBall"
+	"ProBall",
+	"Instagib",
+	"NadeFest"
 };
 
 enum monflags_t {

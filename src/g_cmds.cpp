@@ -2643,6 +2643,7 @@ static std::string GetVotableGametypesList() {
 			// Skip GT_NONE, GT_STRIKE, GT_RR, GT_LMS, GT_BALL (not fully implemented)
 			if (i == GT_NONE || i == GT_STRIKE || i == GT_RR || i == GT_LMS || i == GT_BALL)
 				continue;
+			// Include GT_INSTAGIB in the list
 			if (!result.empty())
 				result += "|";
 			result += gt_short_name[i];

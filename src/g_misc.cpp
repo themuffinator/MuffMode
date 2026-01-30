@@ -204,7 +204,7 @@ gentity_t *ThrowGib(gentity_t *self, const char *gibname, int damage, gib_type_t
 
 	gib->think = GibSink;
 
-	if (g_instagib->integer)
+	if (g_instagib->integer || GT(GT_INSTAGIB))
 		gib->nextthink = level.time + random_time(1_sec, 5_sec);
 	else
 		gib->nextthink = level.time + random_time(10_sec, 20_sec);

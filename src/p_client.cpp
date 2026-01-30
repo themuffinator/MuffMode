@@ -725,9 +725,9 @@ static void TossClientItems(gentity_t *self) {
 	// drop weapon
 	wp = self->client->pers.weapon;
 	if (wp) {
-		if (g_instagib->integer)
+		if (g_instagib->integer || GT(GT_INSTAGIB))
 			wp = nullptr;
-		else if (g_nadefest->integer)
+		else if (g_nadefest->integer || GT(GT_NADEFEST))
 			wp = nullptr;
 		else if (!self->client->pers.inventory[self->client->pers.weapon->ammo])
 			wp = nullptr;
@@ -1350,10 +1350,10 @@ void InitClientPersistant(gentity_t *ent, gclient_t *client) {
 		if (GT(GT_BALL)) {
 			client->pers.inventory[IT_WEAPON_CHAINFIST] = 1;
 		} else if (!taken_loadout) {
-			if (g_instagib->integer) {
+			if (g_instagib->integer || GT(GT_INSTAGIB)) {
 				client->pers.inventory[IT_WEAPON_RAILGUN] = 1;
 				client->pers.inventory[IT_AMMO_SLUGS] = AMMO_INFINITE;
-			} else if (g_nadefest->integer) {
+			} else if (g_nadefest->integer || GT(GT_NADEFEST)) {
 				client->pers.inventory[IT_AMMO_GRENADES] = AMMO_INFINITE;
 			} else if (GTF(GTF_ARENA)) {
 				client->pers.max_ammo.fill(50);
@@ -4209,9 +4209,9 @@ void ClientThink(gentity_t *ent, usercmd_t *ucmd) {
 					gi.LocClient_Print(ent, PRINT_CENTER, "VAMPIRIC DAMAGE\nSurvive by inflicting damage on your foes,\ntheir pain makes you stronger!");
 				} else if (g_frenzy->integer) {
 					gi.LocClient_Print(ent, PRINT_CENTER, "WEAPONS FRENZY\nWeapons fire faster, rockets move faster, ammo regenerates.");
-				} else if (g_nadefest->integer) {
+				} else if (g_nadefest->integer || GT(GT_NADEFEST)) {
 					gi.LocClient_Print(ent, PRINT_CENTER, "NADE FEST\nOnly grenades, nothing else!");
-				} else if (g_instagib->integer) {
+				} else if (g_instagib->integer || GT(GT_INSTAGIB)) {
 					gi.LocClient_Print(ent, PRINT_CENTER, "INSTAGIB\nA rail-y good time!");
 				}
 

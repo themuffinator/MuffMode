@@ -48,6 +48,7 @@ static void G_Menu_SetLevelName(menu_t *p) {
 /* ADMIN */
 
 void G_Menu_ReturnToMain(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_ReturnToCallVote(gentity_t *ent, menu_hnd_t *p);
 
 struct admin_settings_t {
 	int	 timelimit;
@@ -440,6 +441,7 @@ void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p);
 
 void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_ReturnToCallVote(gentity_t *ent, menu_hnd_t *p);
 
 const menu_t pmcallvotemenu[] = {
 	{ "Call a Vote", MENU_ALIGN_CENTER, nullptr },
@@ -480,7 +482,8 @@ const menu_t pmcallvotemenu_map[] = {
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
-	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection }
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 const menu_t pmcallvotemenu_gametype[] = {
@@ -501,7 +504,7 @@ const menu_t pmcallvotemenu_gametype[] = {
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
-	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 const menu_t pmcallvotemenu_powerups[] = {
@@ -522,7 +525,7 @@ const menu_t pmcallvotemenu_powerups[] = {
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
-	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 const menu_t pmcallvotemenu_friendlyfire[] = {
@@ -543,7 +546,7 @@ const menu_t pmcallvotemenu_friendlyfire[] = {
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
-	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 const menu_t pmcallvotemenu_timelimit[] = {
@@ -564,7 +567,7 @@ const menu_t pmcallvotemenu_timelimit[] = {
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
-	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 const menu_t pmcallvotemenu_scorelimit[] = {
@@ -585,7 +588,7 @@ const menu_t pmcallvotemenu_scorelimit[] = {
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
-	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToMain }
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
 inline std::vector<std::string> str_split(const std::string_view &str, char by) {
@@ -1137,16 +1140,27 @@ static void G_Menu_CallVote_Update(gentity_t *ent) {
 	// Set title
 	Q_strlcpy(entries[0].text, "Call a Vote", sizeof(entries[0].text));
 	
-	// Map option - show current map name
-	entries[cvmenu_map].SelectFunc = G_Menu_CallVote_Map;
+	// Gametype option - show current gametype (first option)
+	int gametype_index = cvmenu_map;  // Use cvmenu_map index (3) for gametype
+	entries[gametype_index].SelectFunc = G_Menu_CallVote_GameType;
+	Q_strlcpy(entries[gametype_index].text, G_Fmt("Gametype: {}", level.gametype_name).data(), sizeof(entries[gametype_index].text));
+
+	// Map option - show current map name (second option)
+	int map_index = gametype_index + 1;
+	entries[map_index].SelectFunc = G_Menu_CallVote_Map;
 	if (level.mapname[0]) {
-		Q_strlcpy(entries[cvmenu_map].text, G_Fmt("Map:\t\t {}", level.mapname).data(), sizeof(entries[cvmenu_map].text));
+		Q_strlcpy(entries[map_index].text, G_Fmt("Map:\t\t {}", level.mapname).data(), sizeof(entries[map_index].text));
 	} else {
-		Q_strlcpy(entries[cvmenu_map].text, "Map", sizeof(entries[cvmenu_map].text));
+		Q_strlcpy(entries[map_index].text, "Map", sizeof(entries[map_index].text));
 	}
 	
-	// Scorelimit option - show current scorelimit value, place directly after Map
-	int scorelimit_index = cvmenu_map + 1;  // Place right after Map
+	// Blank line after Map
+	int blank1_index = map_index + 1;
+	entries[blank1_index].SelectFunc = nullptr;
+	entries[blank1_index].text[0] = '\0';
+	
+	// Scorelimit option - show current scorelimit value
+	int scorelimit_index = blank1_index + 1;
 	entries[scorelimit_index].SelectFunc = G_Menu_CallVote_ScoreLimit;
 	int current_scorelimit = GT_ScoreLimit();
 	if (current_scorelimit > 0) {
@@ -1155,7 +1169,7 @@ static void G_Menu_CallVote_Update(gentity_t *ent) {
 		Q_strlcpy(entries[scorelimit_index].text, "Scorelimit: 0", sizeof(entries[scorelimit_index].text));
 	}
 
-	// Timelimit option - show current timelimit value (minutes), placed after scorelimit
+	// Timelimit option - show current timelimit value (minutes)
 	int timelimit_index = scorelimit_index + 1;
 	entries[timelimit_index].SelectFunc = G_Menu_CallVote_TimeLimit;
 	int current_timelimit = (int)timelimit->value;
@@ -1165,18 +1179,18 @@ static void G_Menu_CallVote_Update(gentity_t *ent) {
 		Q_strlcpy(entries[timelimit_index].text, "Timelimit: 0", sizeof(entries[timelimit_index].text));
 	}
 
-	// Gametype option - show current gametype, placed after timelimit
-	int gametype_index = timelimit_index + 1;
-	entries[gametype_index].SelectFunc = G_Menu_CallVote_GameType;
-	Q_strlcpy(entries[gametype_index].text, G_Fmt("Gametype: {}", level.gametype_name).data(), sizeof(entries[gametype_index].text));
+	// Blank line after Timelimit
+	int blank2_index = timelimit_index + 1;
+	entries[blank2_index].SelectFunc = nullptr;
+	entries[blank2_index].text[0] = '\0';
 
-	// Powerups option - show current state and allow toggle, placed after gametype
-	int powerups_index = gametype_index + 1;
+	// Powerups option - show current state and allow toggle
+	int powerups_index = blank2_index + 1;
 	entries[powerups_index].SelectFunc = G_Menu_CallVote_Powerups;
 	bool powerups_enabled = g_no_powerups->integer == 0;
 	Q_strlcpy(entries[powerups_index].text, G_Fmt("Powerups: {}", powerups_enabled ? "ON" : "OFF").data(), sizeof(entries[powerups_index].text));
 
-	// Friendly Fire option - show current state and allow toggle, placed after powerups (only available for TDM and CTF)
+	// Friendly Fire option - show current state and allow toggle (only available for TDM and CTF)
 	int friendlyfire_index = powerups_index + 1;
 	if (GT(GT_TDM) || GT(GT_CTF)) {
 		entries[friendlyfire_index].SelectFunc = G_Menu_CallVote_FriendlyFire;
@@ -1690,6 +1704,12 @@ void G_Menu_ReturnToMain(gentity_t *ent, menu_hnd_t *p) {
 	gi.local_sound(ent, CHAN_AUTO, gi.soundindex("misc/menu3.wav"), 1, ATTN_NONE, 0);
 }
 
+void G_Menu_ReturnToCallVote(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
+	P_Menu_Open(ent, pmcallvotemenu, -1, sizeof(pmcallvotemenu) / sizeof(menu_t), nullptr, G_Menu_CallVote_Update);
+	gi.local_sound(ent, CHAN_AUTO, gi.soundindex("misc/menu3.wav"), 1, ATTN_NONE, 0);
+}
+
 static void G_Menu_HostInfo_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
 	int		i = 0;
@@ -1786,7 +1806,7 @@ static void G_Menu_ServerInfo_Update(gentity_t *ent) {
 		i++;
 	}
 
-	if (g_instagib->integer) {
+	if (g_instagib->integer || GT(GT_INSTAGIB)) {
 		if (g_instagib_splash->integer) {
 			Q_strlcpy(entries[i].text, "InstaGib + Rail Splash", sizeof(entries[i].text));
 		} else {
@@ -1802,7 +1822,7 @@ static void G_Menu_ServerInfo_Update(gentity_t *ent) {
 		Q_strlcpy(entries[i].text, "Weapons Frenzy", sizeof(entries[i].text));
 		i++;
 	}
-	if (g_nadefest->integer) {
+	if (g_nadefest->integer || GT(GT_NADEFEST)) {
 		Q_strlcpy(entries[i].text, "Nade Fest", sizeof(entries[i].text));
 		i++;
 	}

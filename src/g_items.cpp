@@ -994,7 +994,7 @@ static void Tech_Spawn(gitem_t *item, gentity_t *spot) {
 
 static bool AllowTechs() {
 	if (!strcmp(g_allow_techs->string, "auto"))
-		return !!(GT(GT_CTF) && !g_instagib->integer && !g_nadefest->integer && notGT(GT_BALL));
+		return !!(GT(GT_CTF) && !(g_instagib->integer || GT(GT_INSTAGIB)) && !(g_nadefest->integer || GT(GT_NADEFEST)) && notGT(GT_BALL));
 	else
 		return !!(g_allow_techs->integer && ItemSpawnsEnabled());
 }
@@ -1116,7 +1116,7 @@ void Tech_ApplyAutoDoc(gentity_t *ent) {
 	gclient_t	*cl;
 	int			index;
 	float		volume = 1.0;
-	bool		mod = g_instagib->integer || g_nadefest->integer;
+	bool		mod = (g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST));
 	bool		no_health = mod || GTF(GTF_ARENA) || g_no_health->integer;
 	int			max = g_vampiric_damage->integer ? ceil(g_vampiric_health_max->integer/2) : mod ? 100 : 150;
 
@@ -1173,8 +1173,8 @@ void Tech_ApplyAutoDoc(gentity_t *ent) {
 bool Tech_HasRegeneration(gentity_t *ent) {
 	if (!ent->client) return false;
 	if (ent->client->pers.inventory[IT_TECH_AUTODOC]) return true;
-	if (g_instagib->integer) return true;
-	if (g_nadefest->integer) return true;
+	if (g_instagib->integer || GT(GT_INSTAGIB)) return true;
+	if (g_nadefest->integer || GT(GT_NADEFEST)) return true;
 	return false;
 }
 
@@ -2168,7 +2168,7 @@ void Powerup_ApplyRegeneration(gentity_t *ent) {
 	bool		noise = false;
 	gclient_t	*cl;
 	float		volume = 1.0;
-	bool		mod = g_instagib->integer || g_nadefest->integer;
+	bool		mod = (g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST));
 	bool		no_health = mod || GTF(GTF_ARENA) || g_no_health->integer;
 
 	cl = ent->client;

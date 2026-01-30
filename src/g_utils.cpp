@@ -783,7 +783,7 @@ const char *G_PlaceString(int rank) {
 bool ItemSpawnsEnabled() {
 	if (g_no_items->integer)
 		return false;
-	if (g_instagib->integer || g_nadefest->integer)
+	if ((g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST)))
 		return false;
 	if (GTF(GTF_ARENA))
 		return false;

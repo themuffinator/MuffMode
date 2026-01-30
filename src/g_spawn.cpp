@@ -1903,7 +1903,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 // create & set the statusbar string for the current gamemode
 static void G_InitStatusbar() {
 	statusbar_t sb;
-	bool minhud = g_instagib->integer || g_nadefest->integer;
+	bool minhud = (g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST));
 
 	// ---- shared stuff that every gamemode uses ----
 	sb.yb(-24);
@@ -2029,7 +2029,11 @@ static void G_InitStatusbar() {
 void GT_SetLongName(void) {
 	const char *s;
 	if (deathmatch->integer) {
-		if (GT(GT_CTF)) {
+		if (GT(GT_INSTAGIB)) {
+			s = gt_long_name[GT_INSTAGIB];
+		} else if (GT(GT_NADEFEST)) {
+			s = gt_long_name[GT_NADEFEST];
+		} else if (GT(GT_CTF)) {
 			if (g_instagib->integer) {
 				s = "Insta-CTF";
 			} else if (g_vampiric_damage->integer) {
@@ -2335,7 +2339,7 @@ void SP_worldspawn(gentity_t *ent) {
 
 	PrecacheItem(GetItemByIndex(IT_COMPASS));
 
-	if (!g_instagib->integer && !g_nadefest->integer && notGT(GT_BALL))
+	if (!(g_instagib->integer || GT(GT_INSTAGIB)) && !(g_nadefest->integer || GT(GT_NADEFEST)) && notGT(GT_BALL))
 		PrecacheItem(GetItemByIndex(IT_WEAPON_BLASTER));
 
 	if (GT(GT_BALL))

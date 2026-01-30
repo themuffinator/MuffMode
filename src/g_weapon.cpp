@@ -991,14 +991,14 @@ void fire_rail(gentity_t *self, const vec3_t &start, const vec3_t &aimdir, int d
 
 		if (binary_positional_search(org, start, args.tr.endpos, gi.inPHS, 3)) {
 			gi.WriteByte(svc_temp_entity);
-			gi.WriteByte((deathmatch->integer && g_instagib->integer) ? TE_RAILTRAIL2 : TE_RAILTRAIL);
+			gi.WriteByte((deathmatch->integer && (g_instagib->integer || GT(GT_INSTAGIB))) ? TE_RAILTRAIL2 : TE_RAILTRAIL);
 			gi.WritePosition(start);
 			gi.WritePosition(args.tr.endpos);
 			gi.unicast(player, false, unicast_key);
 		}
 	}
 
-	if (g_instagib->integer && g_instagib_splash->integer) {
+	if ((g_instagib->integer || GT(GT_INSTAGIB)) && g_instagib_splash->integer) {
 		gentity_t *exp;
 
 		exp = G_Spawn();

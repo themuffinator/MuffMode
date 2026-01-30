@@ -490,7 +490,7 @@ void T_Damage(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, const 
 	if (!targ->takedamage)
 		return;
 
-	if (g_instagib->integer && attacker->client && targ->client) {
+	if ((g_instagib->integer || GT(GT_INSTAGIB)) && attacker->client && targ->client) {
 		// [Kex] always kill no matter what on instagib
 		damage = 9999;
 	}

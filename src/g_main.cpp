@@ -276,7 +276,9 @@ int _gt[] = {
 	/* GT_RR */ GTF_TEAMS | GTF_ROUNDS | GTF_ARENA,
 	/* GT_LMS */ GTF_ELIMINATION,
 	/* GT_HORDE */ GTF_ROUNDS,
-	/* GT_BALL */ 0
+	/* GT_BALL */ 0,
+	/* GT_INSTAGIB */ GTF_FRAGS,
+	/* GT_NADEFEST */ GTF_FRAGS
 };
 
 // =================================================
@@ -677,6 +679,26 @@ void ChangeGametype(gametype_t gt) {
 
 	if ((int)gt != g_gametype->integer) {
 		gi.cvar_forceset("g_gametype", G_Fmt("{}", (int)gt).data());
+		
+		// Sync g_instagib cvar when switching to/from instagib gametype
+		if (gt == gametype_t::GT_INSTAGIB) {
+			if (!g_instagib->integer)
+				gi.cvar_forceset("g_instagib", "1");
+		} else if (g_gametype->integer == (int)gametype_t::GT_INSTAGIB) {
+			// Switching away from instagib - clear the cvar
+			if (g_instagib->integer)
+				gi.cvar_forceset("g_instagib", "0");
+		}
+		
+		// Sync g_nadefest cvar when switching to/from nadefest gametype
+		if (gt == gametype_t::GT_NADEFEST) {
+			if (!g_nadefest->integer)
+				gi.cvar_forceset("g_nadefest", "1");
+		} else if (g_gametype->integer == (int)gametype_t::GT_NADEFEST) {
+			// Switching away from nadefest - clear the cvar
+			if (g_nadefest->integer)
+				gi.cvar_forceset("g_nadefest", "0");
+		}
 		
 		// Execute gametype-specific cfg when gametype actually changes
 		// This ensures cfg runs on gametype change, not on every map load
