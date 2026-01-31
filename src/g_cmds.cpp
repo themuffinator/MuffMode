@@ -2861,8 +2861,7 @@ static void Vote_Pass_FriendlyFire() {
 
 	gi.cvar_forceset("g_friendly_fire", argi ? "1" : "0");
 	
-	// Restart the map so friendly fire changes take effect immediately
-	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
+	// Friendly fire changes take effect immediately, no map restart needed
 }
 
 static bool Vote_Val_FriendlyFire(gentity_t *ent) {
