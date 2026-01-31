@@ -3739,7 +3739,7 @@ void ExitLevel() {
 
 		const char *s = "";
 
-		if (GT(GT_DUEL)) {
+		if (GT(GT_DUEL) && level.num_playing_clients >= 2) {
 			gentity_t *e1 = &g_entities[level.sorted_clients[0] + 1];
 			gentity_t *e2 = &g_entities[level.sorted_clients[1] + 1];
 			const char *n1 = e1 ? e1->client->resp.netname : "";

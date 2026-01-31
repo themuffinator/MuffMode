@@ -2955,7 +2955,8 @@ Validates that a state transition is legal
 static bool IsValidVoteTransition(VoteState from, VoteState to) {
 	switch (from) {
 		case VoteState::IDLE:
-			return to == VoteState::ACTIVE;
+			// Allow IDLE -> IDLE (harmless, happens during level init after memset)
+			return to == VoteState::ACTIVE || to == VoteState::IDLE;
 			
 		case VoteState::ACTIVE:
 			return to == VoteState::PASSED || 
@@ -2988,6 +2989,12 @@ Centralized state transition function
 void TransitionVoteState(VoteState new_state) {
 	VoteState old_state = level.vote_state.state;
 	
+	// Skip no-op transitions (IDLE -> IDLE)
+	if (old_state == new_state && new_state == VoteState::IDLE) {
+		// Already IDLE, nothing to do
+		return;
+	}
+	
 	// Validate transition
 	if (!IsValidVoteTransition(old_state, new_state)) {
 		gi.Com_PrintFmt("Invalid vote state transition: {} -> {}\n", 
@@ -2996,10 +3003,12 @@ void TransitionVoteState(VoteState new_state) {
 		return;
 	}
 	
-	// Log state transition
-	const char* state_names[] = { "IDLE", "ACTIVE", "PASSED", "EXECUTING", "FAILED", "COMPLETE" };
-	MuffModeLog("VOTE", "State transition: %s -> %s", 
-	           state_names[(int)old_state], state_names[(int)new_state]);
+	// Log state transition (only if not a no-op)
+	if (old_state != new_state) {
+		const char* state_names[] = { "IDLE", "ACTIVE", "PASSED", "EXECUTING", "FAILED", "COMPLETE" };
+		MuffModeLog("VOTE", "State transition: %s -> %s", 
+		           state_names[(int)old_state], state_names[(int)new_state]);
+	}
 	
 	// State change
 	level.vote_state.state = new_state;
