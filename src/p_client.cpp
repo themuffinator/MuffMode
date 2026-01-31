@@ -258,7 +258,37 @@ static void PCfg_ClientInitPConfig(gentity_t *ent) {
 	if (!ent->client) return;
 	if (ent->svflags & SVF_BOT) return;
 
-	const std::string path = std::string(G_Fmt("baseq2/pcfg/{}.cfg", ent->client->pers.social_id));
+	// Validate and sanitize social_id for filesystem use
+	// This prevents crashes from empty or malicious social_id values
+	char safe_social_id[MAX_INFO_VALUE] = {0};
+	if (!ent->client->pers.social_id[0]) {
+		// Empty social_id - use a fallback based on client number
+		Q_strlcpy(safe_social_id, G_Fmt("unknown_{}", ent - g_entities - 1).data(), sizeof(safe_social_id));
+	} else {
+		// Sanitize: remove path separators and other dangerous characters
+		const char *src = ent->client->pers.social_id;
+		char *dst = safe_social_id;
+		size_t remaining = sizeof(safe_social_id) - 1;
+		
+		while (*src && remaining > 0) {
+			char c = *src++;
+			// Allow alphanumeric, dash, underscore, and common ID characters
+			// Block path separators, null bytes, and other filesystem-unsafe chars
+			if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || 
+			    (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+				*dst++ = c;
+				remaining--;
+			}
+		}
+		*dst = '\0';
+		
+		// If sanitization removed everything, use fallback
+		if (!safe_social_id[0]) {
+			Q_strlcpy(safe_social_id, G_Fmt("invalid_{}", ent - g_entities - 1).data(), sizeof(safe_social_id));
+		}
+	}
+
+	const std::string path = std::string(G_Fmt("baseq2/pcfg/{}.cfg", safe_social_id));
 	const char *name = path.c_str();
 
 	FILE *f = fopen(name, "rb");
