@@ -1,6 +1,7 @@
 // Copyright (c) ZeniMax Media Inc.
 // Licensed under the GNU General Public License 2.0.
 #include "g_local.h"
+#include "g_debug_log.h"
 #include "monsters/m_player.h"
 /*freeze*/
 #if 0
@@ -2457,11 +2458,13 @@ void Vote_Pass_Map() {
 	
 	if (level.vote_state.arg.empty()) {
 		gi.Com_Error("Vote_Pass_Map: vote_arg is empty");
+		MuffModeLog("MAP", "ERROR: Vote_Pass_Map called with empty vote_arg");
 		return;
 	}
 	
 	if (level.vote_state.arg.length() >= sizeof(level.nextmap)) {
 		gi.Com_Error("Map name too long in vote execution");
+		MuffModeLog("MAP", "ERROR: Map name too long: %s", level.vote_state.arg.c_str());
 		return;
 	}
 	
@@ -2470,12 +2473,14 @@ void Vote_Pass_Map() {
 	// Validate the copy was successful and the string is valid
 	if (!level.nextmap[0]) {
 		gi.Com_Error("Vote_Pass_Map: Failed to copy map name to nextmap");
+		MuffModeLog("MAP", "ERROR: Failed to copy map name to nextmap");
 		return;
 	}
 	
 	// Ensure the string is null-terminated
 	level.nextmap[sizeof(level.nextmap) - 1] = '\0';
 	
+	MuffModeLog("MAP", "Vote passed: changing map from '%s' to '%s'", level.mapname, level.nextmap);
 	level.changemap = level.nextmap;  // Now points to safe storage
 	ExitLevel();
 }
@@ -2609,9 +2614,13 @@ void Vote_Pass_RestartMatch() {
 
 void Vote_Pass_Gametype() {
 	gametype_t gt = GT_IndexFromString(level.vote_state.arg.data());
-	if (gt == GT_NONE)
+	if (gt == GT_NONE) {
+		MuffModeLog("GAMETYPE", "ERROR: Invalid gametype string: %s", level.vote_state.arg.c_str());
 		return;
+	}
 	
+	MuffModeLog("GAMETYPE", "Vote passed: changing gametype to %s (arg=%s)", 
+	           gt_short_name[(int)gt], level.vote_state.arg.c_str());
 	ChangeGametype(gt);
 }
 
@@ -2983,8 +2992,14 @@ void TransitionVoteState(VoteState new_state) {
 	if (!IsValidVoteTransition(old_state, new_state)) {
 		gi.Com_PrintFmt("Invalid vote state transition: {} -> {}\n", 
 		               (int)old_state, (int)new_state);
+		MuffModeLog("VOTE", "Invalid state transition: %d -> %d", (int)old_state, (int)new_state);
 		return;
 	}
+	
+	// Log state transition
+	const char* state_names[] = { "IDLE", "ACTIVE", "PASSED", "EXECUTING", "FAILED", "COMPLETE" };
+	MuffModeLog("VOTE", "State transition: %s -> %s", 
+	           state_names[(int)old_state], state_names[(int)new_state]);
 	
 	// State change
 	level.vote_state.state = new_state;
@@ -3001,17 +3016,31 @@ void TransitionVoteState(VoteState new_state) {
 			level.vote_state.yes_votes = 0;
 			level.vote_state.no_votes = 0;
 			level.vote_state.num_eligible = 0;
+			MuffModeLog("VOTE", "Vote state cleared (IDLE)");
 			break;
 			
 		case VoteState::PASSED:
 			// Set execution time for 3 second delay
 			level.vote_state.execute_time = level.time + 3_sec;
+			MuffModeLog("VOTE", "Vote passed, will execute in 3 seconds (command=%s, arg=%s)", 
+			           level.vote_state.command ? level.vote_state.command->name : "null",
+			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
 			break;
 			
 		case VoteState::EXECUTING:
+			MuffModeLog("VOTE", "Executing vote command: %s %s", 
+			           level.vote_state.command ? level.vote_state.command->name : "null",
+			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
+			break;
+			
 		case VoteState::FAILED:
+			MuffModeLog("VOTE", "Vote failed (command=%s, arg=%s)", 
+			           level.vote_state.command ? level.vote_state.command->name : "null",
+			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
+			break;
+			
 		case VoteState::COMPLETE:
-			// No special entry actions
+			MuffModeLog("VOTE", "Vote completed successfully");
 			break;
 			
 		default:
@@ -3071,10 +3100,12 @@ Vote_Passed
 void Vote_Passed() {
 	if (!level.vote_state.command) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed but command was lost. Please try again.\n");
+		MuffModeLog("VOTE", "ERROR: Vote passed but command was lost");
 		TransitionVoteState(VoteState::FAILED);
 		return;
 	}
 
+	MuffModeLog("VOTE", "Executing vote command function: %s", level.vote_state.command->name);
 	level.vote_state.command->func();
 	TransitionVoteState(VoteState::COMPLETE);
 }
@@ -3147,6 +3178,12 @@ void VoteCommandStore(gentity_t *ent) {
 			continue;
 		level.vote_state.num_eligible++;
 	}
+	
+	MuffModeLog("VOTE", "Vote initiated: command=%s, arg=%s, caller=%s, eligible_voters=%d", 
+	           level.vote_state.command->name,
+	           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str(),
+	           level.vote_state.caller->resp.netname,
+	           level.vote_state.num_eligible);
 	
 	// Format vote argument safely - must store in variable to avoid dangling pointer
 	// when LocBroadcast_Print sends to multiple clients

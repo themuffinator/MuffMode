@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "g_local.h"
+#include "g_debug_log.h"
 
 struct spawn_t {
 	const char *name;
@@ -1701,6 +1702,8 @@ parsing textual entity definitions out of an ent file.
 ==============
 */
 void SpawnEntities(const char *mapname, const char *entities, const char *spawnpoint) {
+	MuffModeLog("MAP", "Loading map: '%s' (spawnpoint: '%s')", mapname, spawnpoint ? spawnpoint : "(none)");
+	
 	bool		ent_file_exists = false, ent_valid = true;
 	//const char	*entities = level.entstring.c_str();
 //#if 0
@@ -1794,6 +1797,9 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 		Q_strlcpy(game.spawnpoint, spawnpoint, sizeof(game.spawnpoint));
 
 	level.is_n64 = strncmp(level.mapname, "q64/", 4) == 0;
+	
+	MuffModeLog("MAP", "Map name set: '%s' (is_n64=%d, gametype=%s)", 
+	           level.mapname, level.is_n64 ? 1 : 0, gt_short_name[g_gametype->integer]);
 
 	level.coop_scale_players = 0;
 	level.coop_health_scaling = clamp(g_coop_health_scaling->value, 0.f, 1.f);
@@ -1894,6 +1900,9 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 	setup_shadow_lights();
 
 	level.init = true;
+	
+	MuffModeLog("MAP", "Map '%s' loaded successfully (entities spawned, init=true)", level.mapname);
+	MuffModeLog_Separator();
 }
 
 //===================================================================

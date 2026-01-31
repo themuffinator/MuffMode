@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "g_local.h"
+#include "g_debug_log.h"
 #include "bots/bot_includes.h"
 #include "monsters/m_player.h"	// match starts
 
@@ -214,6 +215,7 @@ cvar_t *g_vampiric_percentile;
 cvar_t *g_verbose;
 cvar_t *g_vote_flags;
 cvar_t *g_vote_limit;
+cvar_t *g_muffmode_debug;
 cvar_t *g_warmup_countdown;
 cvar_t *g_warmup_ready_percentage;
 cvar_t *g_weapon_projection;
@@ -678,6 +680,9 @@ void ChangeGametype(gametype_t gt) {
 	}
 
 	if ((int)gt != g_gametype->integer) {
+		MuffModeLog("GAMETYPE", "Changing gametype from %s (%d) to %s (%d)", 
+		           gt_short_name[g_gametype->integer], g_gametype->integer,
+		           gt_short_name[(int)gt], (int)gt);
 		gi.cvar_forceset("g_gametype", G_Fmt("{}", (int)gt).data());
 		
 		// Sync g_instagib cvar when switching to/from instagib gametype
@@ -1005,6 +1010,7 @@ static void InitGame() {
 	g_allow_spec_vote = gi.cvar("g_allow_spec_vote", "0", CVAR_NOFLAGS);
 	g_allow_techs = gi.cvar("g_allow_techs", "auto", CVAR_NOFLAGS);
 	g_allow_vote_midgame = gi.cvar("g_allow_vote_midgame", "0", CVAR_NOFLAGS);
+	g_muffmode_debug = gi.cvar("g_muffmode_debug", "1", CVAR_NOFLAGS);
 	g_allow_voting = gi.cvar("g_allow_voting", "1", CVAR_NOFLAGS);
 	g_arena_dmg_armor = gi.cvar("g_arena_dmg_armor", "0", CVAR_NOFLAGS);
 	g_arena_start_armor = gi.cvar("g_arena_start_armor", "200", CVAR_NOFLAGS);
@@ -2336,6 +2342,9 @@ static void UpdateActiveVote() {
 
 	// Check majority
 	int halfpoint = level.vote_state.num_eligible / 2;
+	MuffModeLog("VOTE", "Vote count: yes=%d, no=%d, eligible=%d, halfpoint=%d", 
+	           level.vote_state.yes_votes, level.vote_state.no_votes, 
+	           level.vote_state.num_eligible, halfpoint);
 	if (level.vote_state.yes_votes > halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
 		AnnouncerSound(world, "vote_passed", nullptr, false);
@@ -3712,6 +3721,13 @@ ExitLevel
 =============
 */
 void ExitLevel() {
+	const char* next_map = level.changemap ? level.changemap : level.nextmap;
+	if (next_map && next_map[0]) {
+		MuffModeLog("MAP", "Exiting level '%s', next map: '%s'", level.mapname, next_map);
+	} else {
+		MuffModeLog("MAP", "Exiting level '%s' (no next map specified)", level.mapname);
+	}
+	
 	if (deathmatch->integer && g_dm_intermission_shots->integer && level.num_playing_human_clients > 0) {
 		struct tm *ltime;
 		time_t gmtime;

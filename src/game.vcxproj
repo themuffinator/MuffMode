@@ -115,6 +115,7 @@
     <ClInclude Include="bots\bot_utils.h" />
     <ClInclude Include="cg_local.h" />
     <ClInclude Include="game.h" />
+    <ClInclude Include="g_debug_log.h" />
     <ClInclude Include="g_local.h" />
     <ClInclude Include="g_statusbar.h" />
     <ClInclude Include="monsters\m_actor.h" />
@@ -168,6 +169,7 @@
     <ClCompile Include="g_cmds.cpp" />
     <ClCompile Include="g_combat.cpp" />
     <ClCompile Include="g_ctf.cpp" />
+    <ClCompile Include="g_debug_log.cpp" />
     <ClCompile Include="g_func.cpp" />
     <ClCompile Include="g_items.cpp" />
     <ClCompile Include="g_main.cpp" />
