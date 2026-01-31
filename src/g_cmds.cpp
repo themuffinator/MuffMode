@@ -2482,6 +2482,10 @@ void Vote_Pass_Map() {
 	
 	MuffModeLog("MAP", "Vote passed: changing map from '%s' to '%s'", level.mapname, level.nextmap);
 	level.changemap = level.nextmap;  // Now points to safe storage
+	
+	// Transition to COMPLETE before map change to ensure state machine consistency
+	// This matches the recovery path in CheckVote() and ensures proper state cleanup
+	TransitionVoteState(VoteState::COMPLETE);
 	ExitLevel();
 }
 
@@ -2722,8 +2726,9 @@ static bool Vote_Val_Ruleset(gentity_t *ent) {
 }
 
 void Vote_Pass_NextMap() {
-	// Clear vote state before map change to prevent race conditions
-	ClearVote();
+	// Transition to COMPLETE before map change to ensure state machine consistency
+	// This matches Vote_Pass_Map() and ensures proper state cleanup
+	TransitionVoteState(VoteState::COMPLETE);
 	Match_End();
 	level.intermission_exit = true;
 }
@@ -2988,9 +2993,10 @@ Centralized state transition function
 void TransitionVoteState(VoteState new_state) {
 	VoteState old_state = level.vote_state.state;
 	
-	// Skip no-op transitions (IDLE -> IDLE)
-	if (old_state == new_state && new_state == VoteState::IDLE) {
-		// Already IDLE, nothing to do
+	// Skip no-op transitions (same state -> same state)
+	// This can happen when Vote_Pass_Map() transitions to COMPLETE before Vote_Passed() does
+	if (old_state == new_state) {
+		// Already in desired state, nothing to do
 		return;
 	}
 	
