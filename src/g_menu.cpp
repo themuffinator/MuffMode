@@ -465,9 +465,8 @@ const menu_t pmcallvotemenu[] = {
 };
 
 const menu_t pmcallvotemenu_map[] = {
-	{ "Choose a Map", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
-	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
+	{ "", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Map_Selection },
@@ -692,10 +691,15 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 }
 
 static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
-
 	menu_t *entries = ent->client->menu->entries;
-	int i = 2;
-	size_t num = 0;
+
+	// Set the title
+	Q_strlcpy(entries[0].text, "Choose a Map", sizeof(entries[0].text));
+
+	// Explicitly clear entry 1 (ensure it has no text and no SelectFunc)
+	entries[1].text[0] = '\0';
+	entries[1].SelectFunc = nullptr;
+	entries[1].text_arg1[0] = '\0';
 
 	// Combine maps from both g_map_pool and g_map_list, with deduplication
 	std::vector<std::string> values;
@@ -736,22 +740,24 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 		});
 	}
 
-	if (!values.size())
-		return;
-
-	for (i = 2; i < 15; i++) {
+	// Clear all entries first (entries 2-15, leaving 16 for return button)
+	for (int i = 2; i < 16; i++) {
 		entries[i].SelectFunc = nullptr;
 		entries[i].text[0] = '\0';
-		entries[i].text_arg1[0] = '\0';  // Clear stored original map name
+		entries[i].text_arg1[0] = '\0';
 	}
 
-	for (num = 0, i = 2; num < values.size() && num < 15; num++, i++) {
+	// Build list of maps (matching gametype menu pattern)
+	int menu_index = 2;
+	for (size_t i = 0; i < values.size() && menu_index < 16; i++) {
 		// Store original case in text_arg1 for later retrieval
-		Q_strlcpy(entries[i].text_arg1, values[num].c_str(), sizeof(entries[i].text_arg1));
+		Q_strlcpy(entries[menu_index].text_arg1, values[i].c_str(), sizeof(entries[menu_index].text_arg1));
 		
 		// Display map name in original case
-		Q_strlcpy(entries[i].text, values[num].c_str(), sizeof(entries[i].text));
-		entries[i].SelectFunc = G_Menu_CallVote_Map_Selection;
+		Q_strlcpy(entries[menu_index].text, values[i].c_str(), sizeof(entries[menu_index].text));
+		entries[menu_index].SelectFunc = G_Menu_CallVote_Map_Selection;
+
+		menu_index++;
 	}
 }
 
