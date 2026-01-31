@@ -657,8 +657,14 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 		return;
 	}
 	
-	// Check for invalid characters in C string
-	if (strpbrk(original_map_name, "/\\:?*\"<>|") != nullptr) {
+	// Check for path traversal attempts (defense-in-depth)
+	if (strstr(original_map_name, "..") != nullptr) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
+		return;
+	}
+	
+	// Check for invalid characters in C string (allow / and \ for subfolder maps like q64/dm1)
+	if (strpbrk(original_map_name, ":?*\"<>|") != nullptr) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
 		return;
 	}
