@@ -7,6 +7,12 @@
 #include <ctime>
 #include <cstdarg>
 #include <cstdio>
+#ifdef _WIN32
+#include <sys/stat.h>
+#include <io.h>
+#else
+#include <sys/stat.h>
+#endif
 
 // ==================== CENTRALIZED DEBUG LOGGING ====================
 // All MuffMode debug logs go to muffmode_debug.log, controlled by g_muffmode_debug cvar
@@ -17,20 +23,71 @@ namespace {
 	std::ofstream g_muffmode_log;
 	bool g_log_initialized = false;
 	
+	bool ShouldTruncateLog()
+	{
+		// Check if log file exists
+#ifdef _WIN32
+		struct _stat fileInfo;
+		if (_stat("muffmode_debug.log", &fileInfo) != 0)
+#else
+		struct stat fileInfo;
+		if (stat("muffmode_debug.log", &fileInfo) != 0)
+#endif
+		{
+			// File doesn't exist, should truncate (create new)
+			return true;
+		}
+		
+		// Get file modification time
+		time_t fileTime = fileInfo.st_mtime;
+		struct tm* fileTm = localtime(&fileTime);
+		
+		// Get current time
+		time_t now = time(nullptr);
+		struct tm* nowTm = localtime(&now);
+		
+		// Compare dates (year, month, day)
+		// If file date is different from today, truncate (new day started)
+		if (fileTm->tm_year != nowTm->tm_year ||
+			fileTm->tm_mon != nowTm->tm_mon ||
+			fileTm->tm_mday != nowTm->tm_mday)
+		{
+			return true; // Different day, truncate
+		}
+		
+		return false; // Same day, append
+	}
+	
 	void EnsureLogInitialized()
 	{
 		if (!g_log_initialized)
 		{
-			// Open log file in truncate mode (clear old log)
-			g_muffmode_log.open("muffmode_debug.log", std::ios::trunc);
+			// Check if we should truncate (new day) or append (same day)
+			bool shouldTruncate = ShouldTruncateLog();
+			std::ios_base::openmode mode = shouldTruncate ? std::ios::trunc : std::ios::app;
+			
+			// Open log file in appropriate mode
+			g_muffmode_log.open("muffmode_debug.log", mode);
 			if (g_muffmode_log.is_open())
 			{
 				time_t now = time(nullptr);
 				char timestamp[64];
 				strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-				g_muffmode_log << "==========================================\n";
-				g_muffmode_log << "MuffMode Debug Log Started: " << timestamp << "\n";
-				g_muffmode_log << "==========================================\n";
+				
+				if (shouldTruncate)
+				{
+					// New day - write header
+					g_muffmode_log << "==========================================\n";
+					g_muffmode_log << "MuffMode Debug Log Started: " << timestamp << "\n";
+					g_muffmode_log << "==========================================\n";
+				}
+				else
+				{
+					// Same day - just add a separator to show continuation
+					g_muffmode_log << "\n----------------------------------------\n";
+					g_muffmode_log << "Log Continued: " << timestamp << "\n";
+					g_muffmode_log << "----------------------------------------\n";
+				}
 				g_muffmode_log.flush();
 			}
 			g_log_initialized = true;
