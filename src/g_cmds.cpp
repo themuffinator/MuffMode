@@ -3871,6 +3871,220 @@ static void Cmd_UnHook_f(gentity_t *ent) {
 }
 
 // ======================================================
+// DUEL HANDICAP SYSTEM
+// ======================================================
+
+// Helper: Sanitize string for name matching (remove case and control characters)
+static void Handicap_SanitizeString(const char *in, char *out) {
+	while (*in) {
+		if (*in < ' ') {
+			in++;
+			continue;
+		}
+		*out = tolower(*in);
+		out++;
+		in++;
+	}
+	*out = '\0';
+}
+
+// Helper: Get client number from name or slot number
+static int Handicap_ClientNumberFromName(gentity_t *to, const char *name) {
+	char s2[MAX_STRING_CHARS];
+	char n2[MAX_STRING_CHARS];
+	
+	// Numeric values are slot numbers
+	if (name[0] >= '0' && name[0] <= '9') {
+		int idnum = atoi(name);
+		if (idnum >= 0 && (unsigned)idnum < (unsigned)game.maxclients) {
+			gclient_t *cl = &game.clients[idnum];
+			if (cl->pers.connected)
+				return idnum;
+		}
+		gi.LocClient_Print(to, PRINT_HIGH, "Bad client slot: {}\n", idnum);
+		return -1;
+	}
+	
+	// Check for name match
+	Handicap_SanitizeString(name, s2);
+	for (size_t idnum = 0; idnum < game.maxclients; idnum++) {
+		gclient_t *cl = &game.clients[idnum];
+		if (!cl->pers.connected)
+			continue;
+		Handicap_SanitizeString(cl->resp.netname, n2);
+		if (!strcmp(n2, s2))
+			return idnum;
+	}
+	
+	gi.LocClient_Print(to, PRINT_HIGH, "User {} is not on the server.\n", name);
+	return -1;
+}
+
+// Helper: Get weapon ID from weapon name string
+static item_id_t Handicap_WeaponIDFromName(const char *name) {
+	if (!Q_strcasecmp(name, "railgun") || !Q_strcasecmp(name, "rail"))
+		return IT_WEAPON_RAILGUN;
+	if (!Q_strcasecmp(name, "chaingun") || !Q_strcasecmp(name, "chain"))
+		return IT_WEAPON_CHAINGUN;
+	if (!Q_strcasecmp(name, "rlauncher") || !Q_strcasecmp(name, "rocket") || !Q_strcasecmp(name, "rl"))
+		return IT_WEAPON_RLAUNCHER;
+	if (!Q_strcasecmp(name, "all"))
+		return IT_NULL; // Special case for "all" (restricts all three: railgun, chaingun, rlauncher)
+	return IT_NULL;
+}
+
+// Helper: Apply weapon restriction to a player
+static void Handicap_ApplyWeaponRestriction(gentity_t *target, item_id_t weapon_id, bool restrict) {
+	if (!target || !target->client)
+		return;
+
+	if (weapon_id == IT_NULL) {
+		// "all" - restrict all three handicap weapons (railgun, chaingun, rlauncher)
+		constexpr uint32_t HANDICAP_ALL_WEAPONS = 
+			(1U << (IT_WEAPON_RAILGUN - FIRST_WEAPON)) |
+			(1U << (IT_WEAPON_CHAINGUN - FIRST_WEAPON)) |
+			(1U << (IT_WEAPON_RLAUNCHER - FIRST_WEAPON));
+		
+		if (restrict) {
+			target->client->handicap.restricted_weapons |= HANDICAP_ALL_WEAPONS;
+		} else {
+			target->client->handicap.restricted_weapons &= ~HANDICAP_ALL_WEAPONS;
+		}
+	} else {
+		uint32_t weapon_bit = 1U << (weapon_id - FIRST_WEAPON);
+		
+		if (restrict) {
+			target->client->handicap.restricted_weapons |= weapon_bit;
+		} else {
+			target->client->handicap.restricted_weapons &= ~weapon_bit;
+		}
+	}
+	
+	// If currently using a restricted weapon, force switch
+	if (target->client->pers.weapon && (target->client->pers.weapon->flags & IF_WEAPON)) {
+		uint32_t weapon_bit = 1U << (target->client->pers.weapon->id - FIRST_WEAPON);
+		if (target->client->handicap.restricted_weapons & weapon_bit) {
+			NoAmmoWeaponChange(target, false);
+		}
+	}
+}
+
+static void Cmd_Handicap_f(gentity_t *ent) {
+	if (!AdminOk(ent))
+		return;
+
+	// Must be in duel mode
+	if (notGT(GT_DUEL)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Handicap system only works in duel mode.\n");
+		return;
+	}
+
+	if (gi.argc() < 4) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <player> <weapon> <on|off>\n", gi.argv(0));
+		gi.LocClient_Print(ent, PRINT_HIGH, "Weapons: railgun, chaingun, rlauncher, all\n");
+		return;
+	}
+
+	const char *player_name = gi.argv(1);
+	const char *weapon_name = gi.argv(2);
+	const char *onoff = gi.argv(3);
+
+	// Find target player
+	int clientnum = Handicap_ClientNumberFromName(ent, player_name);
+	if (clientnum < 0) {
+		return;
+	}
+
+	gentity_t *target = &g_entities[1 + clientnum];
+	if (!target->inuse || !target->client || !ClientIsPlaying(target->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Player '{}' is not playing.\n", player_name);
+		return;
+	}
+
+	// Validate weapon
+	item_id_t weapon_id = Handicap_WeaponIDFromName(weapon_name);
+	if (weapon_id == IT_NULL && Q_strcasecmp(weapon_name, "all")) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid weapon '{}'. Valid: railgun, chaingun, rlauncher, all\n", weapon_name);
+		return;
+	}
+
+	// Validate on/off
+	bool restrict = false;
+	if (!Q_strcasecmp(onoff, "on") || !Q_strcasecmp(onoff, "1")) {
+		restrict = true;
+	} else if (!Q_strcasecmp(onoff, "off") || !Q_strcasecmp(onoff, "0")) {
+		restrict = false;
+	} else {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid value '{}'. Use 'on' or 'off'.\n", onoff);
+		return;
+	}
+
+	// Apply restriction
+	Handicap_ApplyWeaponRestriction(target, weapon_id, restrict);
+
+	// Broadcast result
+	const char *weapon_display = weapon_name;
+	if (weapon_id != IT_NULL) {
+		gitem_t *weapon_item = GetItemByIndex(weapon_id);
+		if (weapon_item)
+			weapon_display = weapon_item->pickup_name;
+	} else {
+		weapon_display = "all handicap weapons (railgun, chaingun, rlauncher)";
+	}
+
+	gi.LocBroadcast_Print(PRINT_HIGH, "[ADMIN]: {} {} for {}.\n", 
+		weapon_display, restrict ? "restricted" : "unrestricted", 
+		target->client->resp.netname);
+}
+
+static void Cmd_HandicapClear_f(gentity_t *ent) {
+	if (!AdminOk(ent))
+		return;
+
+	// Must be in duel mode
+	if (notGT(GT_DUEL)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Handicap system only works in duel mode.\n");
+		return;
+	}
+
+	if (gi.argc() < 2) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <player>\n", gi.argv(0));
+		return;
+	}
+
+	const char *player_name = gi.argv(1);
+
+	// Find target player
+	int clientnum = Handicap_ClientNumberFromName(ent, player_name);
+	if (clientnum < 0) {
+		return;
+	}
+
+	gentity_t *target = &g_entities[1 + clientnum];
+	if (!target->inuse || !target->client) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Player '{}' is not active.\n", player_name);
+		return;
+	}
+
+	// Clear all restrictions
+	target->client->handicap.restricted_weapons = 0;
+	target->client->handicap.damage_dealt_multiplier = 1.0f;
+	target->client->handicap.damage_received_multiplier = 1.0f;
+	target->client->handicap.health_multiplier = 1.0f;
+
+	// Force weapon switch if currently using a restricted weapon
+	if (target->client->pers.weapon && (target->client->pers.weapon->flags & IF_WEAPON)) {
+		uint32_t weapon_bit = 1U << (target->client->pers.weapon->id - FIRST_WEAPON);
+		if (target->client->handicap.restricted_weapons & weapon_bit) {
+			NoAmmoWeaponChange(target, false);
+		}
+	}
+
+	gi.LocBroadcast_Print(PRINT_HIGH, "[ADMIN]: All handicaps cleared for {}.\n", 
+		target->client->resp.netname);
+}
+
+// ======================================================
 // MAP QUEUE
 // ======================================================
 
@@ -4114,6 +4328,8 @@ cmds_t client_cmds[] = {
 	{"weapnext",		Cmd_WeapNext_f,			CF_NONE},
 	{"weapprev",		Cmd_WeapPrev_f,			CF_NONE},
 	{"where",			Cmd_Where_f,			CF_ALLOW_SPEC},
+	{"handicap",			Cmd_Handicap_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"handicap_clear",	Cmd_HandicapClear_f,	CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 };
 
 /*
