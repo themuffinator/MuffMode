@@ -2915,6 +2915,187 @@ static bool Vote_Val_Powerups(gentity_t *ent) {
 	return true;
 }
 
+// Forward declarations for handicap helper functions
+static int Handicap_ClientNumberFromName(gentity_t *to, const char *name);
+static item_id_t Handicap_WeaponIDFromName(const char *name);
+static void Handicap_ApplyWeaponRestriction(gentity_t *target, item_id_t weapon_id, bool restrict);
+
+static bool Vote_Val_Handicap(gentity_t *ent) {
+	// Must be in duel mode
+	if (notGT(GT_DUEL)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Handicap system only works in duel mode.\n");
+		return false;
+	}
+
+	// Check argument count
+	if (gi.argc() < 5) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: callvote handicap <player> <weapon> <on|off>\n");
+		gi.LocClient_Print(ent, PRINT_HIGH, "Weapons: railgun, chaingun, rlauncher, all\n");
+		return false;
+	}
+
+	const char *player_name = gi.argv(2);
+	const char *weapon_name = gi.argv(3);
+	const char *onoff = gi.argv(4);
+
+	// Find target player
+	int clientnum = Handicap_ClientNumberFromName(ent, player_name);
+	if (clientnum < 0) {
+		return false;
+	}
+
+	gentity_t *target = &g_entities[1 + clientnum];
+	if (!target->inuse || !target->client || !ClientIsPlaying(target->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Player '{}' is not playing.\n", player_name);
+		return false;
+	}
+
+	// Validate weapon
+	item_id_t weapon_id = Handicap_WeaponIDFromName(weapon_name);
+	if (weapon_id == IT_NULL && Q_strcasecmp(weapon_name, "all")) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid weapon '{}'. Valid: railgun, chaingun, rlauncher, all\n", weapon_name);
+		return false;
+	}
+
+	// Validate on/off
+	bool restrict = false;
+	if (!Q_strcasecmp(onoff, "on") || !Q_strcasecmp(onoff, "1")) {
+		restrict = true;
+	} else if (!Q_strcasecmp(onoff, "off") || !Q_strcasecmp(onoff, "0")) {
+		restrict = false;
+	} else {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid value '{}'. Use 'on' or 'off'.\n", onoff);
+		return false;
+	}
+
+	// Check if restriction would change anything
+	if (weapon_id == IT_NULL) {
+		// "all" case
+		constexpr uint32_t HANDICAP_ALL_WEAPONS = 
+			(1U << (IT_WEAPON_RAILGUN - FIRST_WEAPON)) |
+			(1U << (IT_WEAPON_CHAINGUN - FIRST_WEAPON)) |
+			(1U << (IT_WEAPON_RLAUNCHER - FIRST_WEAPON));
+		
+		bool currently_restricted = (target->client->handicap.restricted_weapons & HANDICAP_ALL_WEAPONS) == HANDICAP_ALL_WEAPONS;
+		if (currently_restricted == restrict) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "All handicap weapons are already {} for {}.\n", 
+				restrict ? "restricted" : "unrestricted", target->client->resp.netname);
+			return false;
+		}
+	} else {
+		uint32_t weapon_bit = 1U << (weapon_id - FIRST_WEAPON);
+		bool currently_restricted = (target->client->handicap.restricted_weapons & weapon_bit) != 0;
+		if (currently_restricted == restrict) {
+			gitem_t *weapon_item = GetItemByIndex(weapon_id);
+			gi.LocClient_Print(ent, PRINT_HIGH, "{} is already {} for {}.\n", 
+				weapon_item ? weapon_item->pickup_name : weapon_name,
+				restrict ? "restricted" : "unrestricted", 
+				target->client->resp.netname);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static void Vote_Pass_Handicap() {
+	// Parse the stored argument string
+	// Format: "playername weaponname on|off" or "player name" weaponname on|off
+	std::string arg = level.vote_state.arg;
+	
+	std::string player_name, weapon_name, onoff;
+	
+	// Handle quoted player names
+	if (arg.length() > 0 && arg[0] == '"') {
+		// Find closing quote
+		size_t quote_end = arg.find('"', 1);
+		if (quote_end == std::string::npos) {
+			gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: invalid argument format (unclosed quote).\n");
+			return;
+		}
+		
+		// Extract player name (without quotes)
+		player_name = arg.substr(1, quote_end - 1);
+		
+		// Find next space after closing quote
+		size_t space_after_quote = arg.find(' ', quote_end + 1);
+		if (space_after_quote == std::string::npos) {
+			gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: invalid argument format.\n");
+			return;
+		}
+		
+		// Find space after weapon name
+		size_t space_after_weapon = arg.find(' ', space_after_quote + 1);
+		if (space_after_weapon == std::string::npos) {
+			gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: invalid argument format.\n");
+			return;
+		}
+		
+		weapon_name = arg.substr(space_after_quote + 1, space_after_weapon - space_after_quote - 1);
+		onoff = arg.substr(space_after_weapon + 1);
+	} else {
+		// No quotes - split by spaces normally
+		size_t space1 = arg.find(' ');
+		if (space1 == std::string::npos) {
+			gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: invalid argument format.\n");
+			return;
+		}
+		
+		size_t space2 = arg.find(' ', space1 + 1);
+		if (space2 == std::string::npos) {
+			gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: invalid argument format.\n");
+			return;
+		}
+		
+		player_name = arg.substr(0, space1);
+		weapon_name = arg.substr(space1 + 1, space2 - space1 - 1);
+		onoff = arg.substr(space2 + 1);
+	}
+
+	// Find target player (use a dummy entity for the helper function)
+	gentity_t *dummy_ent = nullptr;
+	for (auto ec : active_clients()) {
+		dummy_ent = ec;
+		break;
+	}
+	if (!dummy_ent) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: no players found.\n");
+		return;
+	}
+
+	int clientnum = Handicap_ClientNumberFromName(dummy_ent, player_name.c_str());
+	if (clientnum < 0) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: player not found.\n");
+		return;
+	}
+
+	gentity_t *target = &g_entities[1 + clientnum];
+	if (!target->inuse || !target->client) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Handicap vote failed: player not active.\n");
+		return;
+	}
+
+	item_id_t weapon_id = Handicap_WeaponIDFromName(weapon_name.c_str());
+	bool restrict = (!Q_strcasecmp(onoff.c_str(), "on") || !Q_strcasecmp(onoff.c_str(), "1"));
+
+	// Apply restriction
+	Handicap_ApplyWeaponRestriction(target, weapon_id, restrict);
+
+	// Broadcast result
+	const char *weapon_display = weapon_name.c_str();
+	if (weapon_id != IT_NULL) {
+		gitem_t *weapon_item = GetItemByIndex(weapon_id);
+		if (weapon_item)
+			weapon_display = weapon_item->pickup_name;
+	} else {
+		weapon_display = "all handicap weapons (railgun, chaingun, rlauncher)";
+	}
+
+	gi.LocBroadcast_Print(PRINT_HIGH, "[VOTE]: {} {} for {}.\n", 
+		weapon_display, restrict ? "restricted" : "unrestricted", 
+		target->client->resp.netname);
+}
+
 vcmds_t vote_cmds[] = {
 	{"map",					Vote_Val_Map,			Vote_Pass_Map,			1,		2,	"[mapname]",						"changes to the specified map"},
 	{"nextmap",				Vote_Val_None,			Vote_Pass_NextMap,		2,		1,	"",									"move to the next map in the rotation"},
@@ -2931,6 +3112,7 @@ vcmds_t vote_cmds[] = {
 	{"ruleset",				Vote_Val_Ruleset,		Vote_Pass_Ruleset,		2048,	2,	"<q2re|mm|q3a>",					"changes the current ruleset"},
 	{"powerups",				Vote_Val_Powerups,		Vote_Pass_Powerups,		4096,	2,	"<0/1>",							"enables or disables powerups"},
 	{"friendlyfire",			Vote_Val_FriendlyFire,	Vote_Pass_FriendlyFire,	8192,	2,	"<0/1>",							"enables or disables friendly fire (team modes only)"},
+	{"handicap",				Vote_Val_Handicap,		Vote_Pass_Handicap,		16384,	4,	"<player> <weapon> <on|off>",		"restricts weapons for a player in duel mode"},
 };
 
 /*
@@ -3154,16 +3336,31 @@ static bool ValidVoteCommand(gentity_t *ent) {
 		return false;
 
 	level.vote_state.command = cc;
-	const char *raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
+	
+	// For handicap votes, concatenate all remaining arguments (player weapon on/off)
+	std::string raw_arg;
+	if (!Q_strcasecmp(cc->name, "handicap") && gi.argc() >= 5) {
+		// Player name is argv(2), weapon is argv(3), on/off is argv(4)
+		// If player name contains spaces, it was quoted - re-quote it for storage
+		std::string player_name = gi.argv(2);
+		if (player_name.find(' ') != std::string::npos) {
+			// Re-quote the player name
+			raw_arg = "\"" + player_name + "\" " + std::string(gi.argv(3)) + " " + std::string(gi.argv(4));
+		} else {
+			raw_arg = player_name + " " + std::string(gi.argv(3)) + " " + std::string(gi.argv(4));
+		}
+	} else {
+		raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
+	}
+	
 	// Limit vote_arg length to prevent message buffer overflow
 	// MAX_QPATH is 64, but we allow a bit more for safety (128 chars should be plenty)
 	constexpr size_t MAX_VOTE_ARG_LENGTH = 128;
-	size_t arg_len = strlen(raw_arg);
-	if (arg_len > MAX_VOTE_ARG_LENGTH) {
+	if (raw_arg.length() > MAX_VOTE_ARG_LENGTH) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Vote argument too long (max {} characters).\n", MAX_VOTE_ARG_LENGTH);
 		return false;
 	}
-	level.vote_state.arg = std::string(raw_arg);
+	level.vote_state.arg = raw_arg;
 	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_state.arg);
 	return true;
 }
