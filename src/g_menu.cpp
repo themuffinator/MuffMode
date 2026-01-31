@@ -729,6 +729,13 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 		}
 	}
 
+	// Sort maps alphabetically (case-insensitive)
+	if (values.size() > 0) {
+		std::sort(values.begin(), values.end(), [](const std::string &a, const std::string &b) {
+			return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
+		});
+	}
+
 	if (!values.size())
 		return;
 
