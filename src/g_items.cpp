@@ -2562,12 +2562,22 @@ static bool Pickup_Armor(gentity_t *ent, gentity_t *other) {
 	if (ent->item->id == IT_ARMOR_SHARD) {
 		if (!old_armor_index)
 			other->client->pers.inventory[IT_ARMOR_JACKET] = 2;
-		else
+		else {
 			other->client->pers.inventory[old_armor_index] += 2;
+			// Cap body armor at 150 for Vanilla Plus in deathmatch
+			if (old_armor_index == IT_ARMOR_BODY && deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+				if (other->client->pers.inventory[IT_ARMOR_BODY] > 150)
+					other->client->pers.inventory[IT_ARMOR_BODY] = 150;
+			}
+		}
 	}
 	// if player has no armor, just use it
 	else if (!old_armor_index) {
-		other->client->pers.inventory[ent->item->id] = base_count;
+		int armor_count = base_count;
+		// Cap body armor at 150 for Vanilla Plus in deathmatch
+		if (ent->item->id == IT_ARMOR_BODY && deathmatch->integer && RS(RS_VANILLA_PLUS) && armor_count > 150)
+			armor_count = 150;
+		other->client->pers.inventory[ent->item->id] = armor_count;
 	}
 
 	// use the better armor
@@ -2585,8 +2595,11 @@ static bool Pickup_Armor(gentity_t *ent, gentity_t *other) {
 			salvage = oldinfo->normal_protection / newinfo->normal_protection;
 			salvagecount = (int)(salvage * other->client->pers.inventory[old_armor_index]);
 			newcount = base_count + salvagecount;
-			if (newcount > newinfo->max_count)
-				newcount = newinfo->max_count;
+			int max_armor = newinfo->max_count;
+			if (ent->item->id == IT_ARMOR_BODY && deathmatch->integer && RS(RS_VANILLA_PLUS))
+				max_armor = 150;
+			if (newcount > max_armor)
+				newcount = max_armor;
 
 			// zero count of old armor so it goes away
 			other->client->pers.inventory[old_armor_index] = 0;
@@ -2598,8 +2611,11 @@ static bool Pickup_Armor(gentity_t *ent, gentity_t *other) {
 			salvage = newinfo->normal_protection / oldinfo->normal_protection;
 			salvagecount = (int)(salvage * base_count);
 			newcount = other->client->pers.inventory[old_armor_index] + salvagecount;
-			if (newcount > oldinfo->max_count)
-				newcount = oldinfo->max_count;
+			int max_armor = oldinfo->max_count;
+			if (old_armor_index == IT_ARMOR_BODY && deathmatch->integer && RS(RS_VANILLA_PLUS))
+				max_armor = 150;
+			if (newcount > max_armor)
+				newcount = max_armor;
 
 			if (RS(RS_Q1) && other->client->pers.inventory[old_armor_index] * oldinfo->normal_protection >= newcount * newinfo->normal_protection)
 				return false;

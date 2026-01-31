@@ -252,7 +252,10 @@ static void Cmd_Give_f(gentity_t *ent) {
 	if (give_all || Q_strcasecmp(name, "armor") == 0) {
 		ent->client->pers.inventory[IT_ARMOR_JACKET] = 0;
 		ent->client->pers.inventory[IT_ARMOR_COMBAT] = 0;
-		ent->client->pers.inventory[IT_ARMOR_BODY] = GetItemByIndex(IT_ARMOR_BODY)->armor_info->max_count;
+		int max_body_armor = GetItemByIndex(IT_ARMOR_BODY)->armor_info->max_count;
+		if (deathmatch->integer && RS(RS_VANILLA_PLUS))
+			max_body_armor = 150;
+		ent->client->pers.inventory[IT_ARMOR_BODY] = max_body_armor;
 
 		if (!give_all)
 			return;

@@ -1080,9 +1080,10 @@ static void P_RunMegaHealth(gentity_t *ent) {
 	if (ent->client->pers.megahealth_time <= 0_ms) {
 		ent->health--;
 
-		if (ent->health > ent->max_health)
-			ent->client->pers.megahealth_time = 1000_ms;
-		else
+		if (ent->health > ent->max_health) {
+			// Decay rate: 2/sec for Vanilla Plus in deathmatch, 1/sec otherwise
+			ent->client->pers.megahealth_time = (deathmatch->integer && RS(RS_VANILLA_PLUS)) ? 500_ms : 1000_ms;
+		} else
 			ent->client->pers.megahealth_time = 0_ms;
 	}
 }

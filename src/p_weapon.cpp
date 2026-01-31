@@ -1343,7 +1343,7 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 		damage = irandom(100, 120);
 		splash_radius = 120;
 		splash_damage = 120;
-		speed = 650;
+		speed = (deathmatch->integer && RS(RS_VANILLA_PLUS)) ? 750 : 650;
 		break;
 	}
 	if (g_frenzy->integer)
@@ -1705,7 +1705,7 @@ static void Weapon_Blaster_Fire(gentity_t *ent, const vec3_t &g_offset, int dama
 		if (RS(RS_Q3A))
 			speed = hyper ? 2000 : 2500;
 		else if (RS(RS_VANILLA_PLUS))
-			speed = hyper ? 1100 : 1500;
+			speed = hyper ? (deathmatch->integer ? 1100 : 1000) : (deathmatch->integer ? 1700 : 1500);
 		else
 			speed = hyper ? 1000 : 1500;
 	}
@@ -1842,6 +1842,10 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			damage = GT(GT_TDM) ? 5 : 7;
 			vs = 200;
 			hs = 200;
+		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+			damage = 7;
+			vs = 400;
+			hs = 240;
 		} else {
 			damage = 8;
 			vs = DEFAULT_BULLET_VSPREAD;
@@ -1928,7 +1932,7 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 #else
 	{
 #endif
-		if (RS(RS_VANILLA_PLUS))
+		if (deathmatch->integer && RS(RS_VANILLA_PLUS))
 			damage = 5;
 		else
 			damage = deathmatch->integer ? 6 : 8;
@@ -2022,13 +2026,23 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 		vspread = (g_chaingun_vspread && g_chaingun_vspread->integer > 0) ? g_chaingun_vspread->integer : DEFAULT_BULLET_VSPREAD;
 		spread_offset = (g_chaingun_spread_offset && g_chaingun_spread_offset->value > 0.0f) ? g_chaingun_spread_offset->value : 4.0f;
 	} else {
-		hspread = DEFAULT_BULLET_HSPREAD;
-		vspread = DEFAULT_BULLET_VSPREAD;
+		if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+			hspread = 330;
+			vspread = 550;
+		} else {
+			hspread = DEFAULT_BULLET_HSPREAD;
+			vspread = DEFAULT_BULLET_VSPREAD;
+		}
 		spread_offset = 4.0f;
 	}
 #else
-	hspread = DEFAULT_BULLET_HSPREAD;
-	vspread = DEFAULT_BULLET_VSPREAD;
+	if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+		hspread = 330;
+		vspread = 550;
+	} else {
+		hspread = DEFAULT_BULLET_HSPREAD;
+		vspread = DEFAULT_BULLET_VSPREAD;
+	}
 	spread_offset = 4.0f;
 #endif
 	
@@ -2090,7 +2104,8 @@ static void Weapon_Shotgun_Fire(gentity_t *ent) {
 	}
 
 	G_LagCompensate(ent, start, dir);
-	fire_shotgun(ent, start, dir, damage, kick, 500, 500, RS(RS_Q3A) ? 11 : 12, MOD_SHOTGUN);
+	int pellets = RS(RS_Q3A) ? 11 : (deathmatch->integer && RS(RS_VANILLA_PLUS) ? 14 : 12);
+	fire_shotgun(ent, start, dir, damage, kick, 500, 500, pellets, MOD_SHOTGUN);
 	G_UnLagCompensate();
 
 	// send muzzle flash

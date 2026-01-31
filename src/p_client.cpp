@@ -1359,8 +1359,12 @@ void InitClientPersistant(gentity_t *ent, gclient_t *client) {
 			client->pers.inventory[IT_ARMOR_JACKET] = armor;
 		else if (armor_type.base_count == combatarmor_info.base_count)
 			client->pers.inventory[IT_ARMOR_COMBAT] = armor;
-		else if (armor_type.base_count == bodyarmor_info.base_count)
+		else if (armor_type.base_count == bodyarmor_info.base_count) {
 			client->pers.inventory[IT_ARMOR_BODY] = armor;
+			// Cap body armor at 150 for Vanilla Plus in deathmatch
+			if (deathmatch->integer && RS(RS_VANILLA_PLUS) && client->pers.inventory[IT_ARMOR_BODY] > 150)
+				client->pers.inventory[IT_ARMOR_BODY] = 150;
+		}
 
 		if (coop->integer) {
 			for (auto player : active_clients()) {
