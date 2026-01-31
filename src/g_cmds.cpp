@@ -2455,17 +2455,17 @@ void Vote_Pass_Map() {
 	// Store map name in level.nextmap buffer to avoid dangling pointer
 	// Must copy to safe storage since vote state will be cleared after this function returns
 	
-	if (level.vote_arg.empty()) {
+	if (level.vote_state.arg.empty()) {
 		gi.Com_Error("Vote_Pass_Map: vote_arg is empty");
 		return;
 	}
 	
-	if (level.vote_arg.length() >= sizeof(level.nextmap)) {
+	if (level.vote_state.arg.length() >= sizeof(level.nextmap)) {
 		gi.Com_Error("Map name too long in vote execution");
 		return;
 	}
 	
-	Q_strlcpy(level.nextmap, level.vote_arg.c_str(), sizeof(level.nextmap));
+	Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
 	
 	// Validate the copy was successful and the string is valid
 	if (!level.nextmap[0]) {
@@ -2608,7 +2608,7 @@ void Vote_Pass_RestartMatch() {
 }
 
 void Vote_Pass_Gametype() {
-	gametype_t gt = GT_IndexFromString(level.vote_arg.data());
+	gametype_t gt = GT_IndexFromString(level.vote_state.arg.data());
 	if (gt == GT_NONE)
 		return;
 	
@@ -2691,7 +2691,7 @@ static bool Vote_Val_Gametype(gentity_t *ent) {
 }
 
 static void Vote_Pass_Ruleset() {
-	ruleset_t rs = RS_IndexFromString(level.vote_arg.data());
+	ruleset_t rs = RS_IndexFromString(level.vote_state.arg.data());
 	if (rs == ruleset_t::RS_NONE)
 		return;
 
@@ -2714,11 +2714,7 @@ static bool Vote_Val_Ruleset(gentity_t *ent) {
 
 void Vote_Pass_NextMap() {
 	// Clear vote state before map change to prevent race conditions
-	level.vote = nullptr;
-	level.vote_arg.clear();
-	level.vote_time = 0_sec;
-	level.vote_execute_time = 0_sec;
-	level.vote_client = nullptr;
+	ClearVote();
 	Match_End();
 	level.intermission_exit = true;
 }
@@ -2737,7 +2733,7 @@ static bool Vote_Val_ShuffleTeams(gentity_t *ent) {
 }
 
 static void Vote_Pass_Unlagged() {
-	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	int argi = strtoul(level.vote_state.arg.data(), nullptr, 10);
 	
 	gi.LocBroadcast_Print(PRINT_HIGH, "Lag compensation has been {}.\n", argi ? "ENABLED" : "DISABLED");
 
@@ -2770,11 +2766,11 @@ void Vote_Pass_Cointoss() {
 }
 
 void Vote_Pass_Random() {
-	gi.LocBroadcast_Print(PRINT_HIGH, "The random number is: {}\n", irandom(2, atoi(level.vote_arg.data())));
+	gi.LocBroadcast_Print(PRINT_HIGH, "The random number is: {}\n", irandom(2, atoi(level.vote_state.arg.data())));
 }
 
 void Vote_Pass_Timelimit() {
-	const char *s = level.vote_arg.data();
+	const char *s = level.vote_state.arg.data();
 	int argi = strtoul(s, nullptr, 10);
 	
 	if (!argi)
@@ -2801,14 +2797,14 @@ static bool Vote_Val_Timelimit(gentity_t *ent) {
 }
 
 void Vote_Pass_Scorelimit() {
-	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	int argi = strtoul(level.vote_state.arg.data(), nullptr, 10);
 	
 	if (argi)
 		gi.LocBroadcast_Print(PRINT_HIGH, "Score limit has been set to {}.\n", argi);
 	else
 		gi.LocBroadcast_Print(PRINT_HIGH, "Score limit has been DISABLED.\n");
 
-	gi.cvar_forceset(G_Fmt("{}limit", GT_ScoreLimitString()).data(), level.vote_arg.data());
+	gi.cvar_forceset(G_Fmt("{}limit", GT_ScoreLimitString()).data(), level.vote_state.arg.data());
 }
 
 static bool Vote_Val_Scorelimit(gentity_t *ent) {
@@ -2839,7 +2835,7 @@ static bool Vote_Val_BalanceTeams(gentity_t *ent) {
 }
 
 static void Vote_Pass_Powerups() {
-	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	int argi = strtoul(level.vote_state.arg.data(), nullptr, 10);
 	
 	gi.LocBroadcast_Print(PRINT_HIGH, "Powerups have been {}.\n", argi ? "ENABLED" : "DISABLED");
 
@@ -2850,7 +2846,7 @@ static void Vote_Pass_Powerups() {
 }
 
 static void Vote_Pass_FriendlyFire() {
-	int argi = strtoul(level.vote_arg.data(), nullptr, 10);
+	int argi = strtoul(level.vote_state.arg.data(), nullptr, 10);
 	
 	gi.LocBroadcast_Print(PRINT_HIGH, "Friendly fire has been {}.\n", argi ? "ENABLED" : "DISABLED");
 
@@ -2941,42 +2937,146 @@ vcmds_t *FindVoteCmdByName(const char *name) {
 }
 
 /*
+===============
+IsValidVoteTransition
+
+Validates that a state transition is legal
+===============
+*/
+static bool IsValidVoteTransition(VoteState from, VoteState to) {
+	switch (from) {
+		case VoteState::IDLE:
+			return to == VoteState::ACTIVE;
+			
+		case VoteState::ACTIVE:
+			return to == VoteState::PASSED || 
+			       to == VoteState::FAILED;
+			       
+		case VoteState::PASSED:
+			return to == VoteState::EXECUTING ||
+			       to == VoteState::FAILED;  // if caller disconnects
+			       
+		case VoteState::EXECUTING:
+			return to == VoteState::COMPLETE ||
+			       to == VoteState::FAILED;
+			       
+		case VoteState::FAILED:
+		case VoteState::COMPLETE:
+			return to == VoteState::IDLE;
+			
+		default:
+			return false;
+	}
+}
+
+/*
+===============
+TransitionVoteState
+
+Centralized state transition function
+===============
+*/
+void TransitionVoteState(VoteState new_state) {
+	VoteState old_state = level.vote_state.state;
+	
+	// Validate transition
+	if (!IsValidVoteTransition(old_state, new_state)) {
+		gi.Com_PrintFmt("Invalid vote state transition: {} -> {}\n", 
+		               (int)old_state, (int)new_state);
+		return;
+	}
+	
+	// State change
+	level.vote_state.state = new_state;
+	
+	// Entry actions for new state
+	switch (new_state) {
+		case VoteState::IDLE:
+			// Clear all vote data
+			level.vote_state.command = nullptr;
+			level.vote_state.arg.clear();
+			level.vote_state.caller = nullptr;
+			level.vote_state.start_time = 0_sec;
+			level.vote_state.execute_time = 0_sec;
+			level.vote_state.yes_votes = 0;
+			level.vote_state.no_votes = 0;
+			level.vote_state.num_eligible = 0;
+			break;
+			
+		case VoteState::PASSED:
+			// Set execution time for 3 second delay
+			level.vote_state.execute_time = level.time + 3_sec;
+			break;
+			
+		case VoteState::EXECUTING:
+		case VoteState::FAILED:
+		case VoteState::COMPLETE:
+			// No special entry actions
+			break;
+			
+		default:
+			break;
+	}
+}
+
+/*
+===============
+ClearVote
+
+Convenience function to clear vote state
+===============
+*/
+void ClearVote() {
+	TransitionVoteState(VoteState::IDLE);
+}
+
+/*
+===============
+IsVoteStateValid
+
+Checks if current vote state is valid
+===============
+*/
+bool IsVoteStateValid() {
+	switch (level.vote_state.state) {
+		case VoteState::IDLE:
+			return level.vote_state.command == nullptr &&
+			       level.vote_state.caller == nullptr;
+			       
+		case VoteState::ACTIVE:
+		case VoteState::PASSED:
+			return level.vote_state.command != nullptr &&
+			       level.vote_state.caller != nullptr;
+			       
+		case VoteState::EXECUTING:
+			// Command may be null if state was corrupted, but we can recover
+			return level.vote_state.caller != nullptr || 
+			       !level.vote_state.arg.empty();
+			       
+		case VoteState::FAILED:
+		case VoteState::COMPLETE:
+			// These states are valid but will transition to IDLE
+			return true;
+			
+		default:
+			return false;
+	}
+}
+
+/*
 ==================
 Vote_Passed
 ==================
 */
 void Vote_Passed() {
-	if (!level.vote) {
+	if (!level.vote_state.command) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed but command was lost. Please try again.\n");
-		
-		// Debug logging for vote state corruption
-		gi.Com_PrintFmt("========== VOTE STATE CORRUPTION DETECTED ==========\n");
-		gi.Com_PrintFmt("Map: {}\n", level.mapname);
-		gi.Com_PrintFmt("Level time: {:.2f}s\n", level.time.seconds<float>());
-		gi.Com_PrintFmt("Vote time: {:.2f}s ({}ms ago)\n", 
-			level.vote_time.seconds<float>(), 
-			(int)(level.time - level.vote_time).milliseconds());
-		gi.Com_PrintFmt("Vote execute time: {:.2f}s (should execute now)\n", level.vote_execute_time.seconds<float>());
-		gi.Com_PrintFmt("Vote arg: '{}'\n", level.vote_arg.empty() ? "(empty)" : level.vote_arg);
-		gi.Com_PrintFmt("Vote client: {}\n", level.vote_client ? level.vote_client->resp.netname : "(null)");
-		gi.Com_PrintFmt("Vote yes: {}, Vote no: {}\n", level.vote_yes, level.vote_no);
-		gi.Com_PrintFmt("Num voting clients: {}\n", level.num_voting_clients);
-		gi.Com_PrintFmt("level.vote pointer: {}\n", (void*)level.vote);
-		gi.Com_PrintFmt("===================================================\n");
-		
-		level.vote_time = 0_sec;
-		level.vote_execute_time = 0_sec;
-		level.vote = nullptr;
-		level.vote_client = nullptr;
-		level.vote_arg.clear();
+		TransitionVoteState(VoteState::FAILED);
 		return;
 	}
 
-	level.vote->func();
-
-	level.vote = nullptr;
-	level.vote_arg.clear();
-	level.vote_execute_time = 0_sec;
+	level.vote_state.command->func();
+	TransitionVoteState(VoteState::COMPLETE);
 }
 
 /*
@@ -2988,7 +3088,7 @@ static bool ValidVoteCommand(gentity_t *ent) {
 	if (!ent->client)
 		return false; // not fully in game yet
 
-	level.vote = nullptr;
+	level.vote_state.command = nullptr;
 
 	vcmds_t *cc = FindVoteCmdByName(gi.argv(1));
 
@@ -3005,7 +3105,7 @@ static bool ValidVoteCommand(gentity_t *ent) {
 	if (!cc->val_func(ent))
 		return false;
 
-	level.vote = cc;
+	level.vote_state.command = cc;
 	const char *raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
 	// Limit vote_arg length to prevent message buffer overflow
 	// MAX_QPATH is 64, but we allow a bit more for safety (128 chars should be plenty)
@@ -3015,8 +3115,8 @@ static bool ValidVoteCommand(gentity_t *ent) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Vote argument too long (max {} characters).\n", MAX_VOTE_ARG_LENGTH);
 		return false;
 	}
-	level.vote_arg = std::string(raw_arg);
-	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_arg);
+	level.vote_state.arg = std::string(raw_arg);
+	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_state.arg);
 	return true;
 }
 
@@ -3027,20 +3127,31 @@ VoteCommandStore
 */
 void VoteCommandStore(gentity_t *ent) {
 	// start the voting, the caller automatically votes yes
-	if (!level.vote) {
+	if (!level.vote_state.command) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Internal error: vote command was lost.\n");
 		return;
 	}
 
-	level.vote_client = ent->client;
-	level.vote_time = level.time;
-	level.vote_yes = 1;
-	level.vote_no = 0;
+	// Initialize vote state
+	level.vote_state.caller = ent->client;
+	level.vote_state.start_time = level.time;
+	level.vote_state.yes_votes = 1;
+	level.vote_state.no_votes = 0;
+	
+	// Calculate eligible voters
+	level.vote_state.num_eligible = 0;
+	for (auto ec : active_clients()) {
+		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+			continue;
+		if (ec->client->sess.is_a_bot)
+			continue;
+		level.vote_state.num_eligible++;
+	}
 	
 	// Format vote argument safely - must store in variable to avoid dangling pointer
 	// when LocBroadcast_Print sends to multiple clients
-	std::string vote_arg_display = level.vote_arg.empty() ? "" : " " + level.vote_arg;
-	gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}{}\n", level.vote_client->resp.netname, level.vote->name, vote_arg_display.c_str());
+	std::string vote_arg_display = level.vote_state.arg.empty() ? "" : " " + level.vote_state.arg;
+	gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}{}\n", level.vote_state.caller->resp.netname, level.vote_state.command->name, vote_arg_display.c_str());
 
 	for (auto ec : active_clients())
 		ec->client->pers.voted = ec == ent ? 1 : 0;
@@ -3054,7 +3165,7 @@ void VoteCommandStore(gentity_t *ent) {
 
 		//gi.local_sound(ec, CHAN_AUTO, gi.soundindex("misc/pc_up.wav"), 1, ATTN_NONE, 0);
 
-		if (ec->client == level.vote_client)
+		if (ec->client == level.vote_state.caller)
 			continue;
 
 		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
@@ -3068,6 +3179,9 @@ void VoteCommandStore(gentity_t *ent) {
 		P_Menu_Close(ec);
 		G_Menu_Vote_Open(ec);
 	}
+	
+	// Transition to ACTIVE state
+	TransitionVoteState(VoteState::ACTIVE);
 }
 
 /*
@@ -3107,13 +3221,13 @@ static void Cmd_CallVote_f(gentity_t *ent) {
 		return;
 	}
 
-	if (level.vote_time) {
+	if (level.vote_state.state != VoteState::IDLE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "A vote is already in progress.\n");
 		return;
 	}
 
 	// if there is still a vote to be executed
-	if (level.vote_execute_time || level.restarted) {
+	if (level.restarted) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Previous vote command is still awaiting execution.\n");
 		return;
 	}
@@ -3159,7 +3273,7 @@ static void Cmd_Vote_f(gentity_t *ent) {
 		return;
 	}
 
-	if (!level.vote_time) {
+	if (level.vote_state.state != VoteState::ACTIVE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
 		return;
 	}
@@ -3172,10 +3286,10 @@ static void Cmd_Vote_f(gentity_t *ent) {
 	const char *arg = gi.argv(1);
 
 	if (arg[0] == 'y' || arg[0] == 'Y' || arg[0] == '1') {
-		level.vote_yes++;
+		level.vote_state.yes_votes++;
 		ent->client->pers.voted = 1;
 	} else {
-		level.vote_no++;
+		level.vote_state.no_votes++;
 		ent->client->pers.voted = -1;
 	}
 
@@ -3186,20 +3300,20 @@ static void Cmd_Vote_f(gentity_t *ent) {
 }
 
 void G_RevertVote(gclient_t *client) {
-	if (!level.vote_time)
+	if (level.vote_state.state != VoteState::ACTIVE)
 		return;
 
-	if (!level.vote_client)
+	if (!level.vote_state.caller)
 		return;
 
 	if (client->pers.voted == 1) {
-		level.vote_yes--;
+		level.vote_state.yes_votes--;
 		client->pers.voted = 0;
-		//trap_SetConfigstring(CS_VOTE_YES, va("%i", level.vote_yes));
+		//trap_SetConfigstring(CS_VOTE_YES, va("%i", level.vote_state.yes_votes));
 	} else if (client->pers.voted == -1) {
-		level.vote_no--;
+		level.vote_state.no_votes--;
 		client->pers.voted = 0;
-		//trap_SetConfigstring(CS_VOTE_NO, va("%i", level.vote_no));
+		//trap_SetConfigstring(CS_VOTE_NO, va("%i", level.vote_state.no_votes));
 	}
 }
 
@@ -3462,7 +3576,7 @@ static void Cmd_ForceVote_f(gentity_t *ent) {
 	if (!deathmatch->integer)
 		return;
 
-	if (!level.vote_time) {
+	if (level.vote_state.state == VoteState::IDLE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
 		return;
 	}
@@ -3471,15 +3585,15 @@ static void Cmd_ForceVote_f(gentity_t *ent) {
 
 	if (arg[0] == 'y' || arg[0] == 'Y' || arg[0] == '1') {
 		gi.Broadcast_Print(PRINT_HIGH, "[ADMIN]: Passed the vote.\n");
-		level.vote_execute_time = level.time + 3_sec;
-		level.vote_client = nullptr;
+		if (level.vote_state.state == VoteState::ACTIVE) {
+			TransitionVoteState(VoteState::PASSED);
+		} else if (level.vote_state.state == VoteState::PASSED) {
+			// Already passed, just execute immediately
+			TransitionVoteState(VoteState::EXECUTING);
+		}
 	} else {
 		gi.Broadcast_Print(PRINT_HIGH, "[ADMIN]: Failed the vote.\n");
-		level.vote_time = 0_sec;
-		level.vote_execute_time = 0_sec;
-		level.vote = nullptr;
-		level.vote_client = nullptr;
-		level.vote_arg.clear();
+		TransitionVoteState(VoteState::FAILED);
 	}
 }
 

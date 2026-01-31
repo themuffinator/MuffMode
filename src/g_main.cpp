@@ -1165,11 +1165,7 @@ static void InitGame() {
 
 	*level.weapon_count = { 0 };
 
-	level.vote = nullptr;
-	level.vote_arg.clear();
-	level.vote_time = 0_sec;
-	level.vote_execute_time = 0_sec;
-	level.vote_client = nullptr;
+	ClearVote();
 
 	level.total_player_deaths = 0;
 
@@ -2307,161 +2303,111 @@ start:
 CheckVote
 ==================
 */
-static void CheckVote(void) {
-	if (!deathmatch->integer)
-		return;
-
-	// vote has passed, execute
-	if (level.vote_execute_time) {
-		if (level.time > level.vote_execute_time) {
-			// Safety check: if vote state was cleared, try to recover if possible
-			if (!level.vote) {
-				// First, attempt recovery for map votes by checking if vote_arg is a valid map name.
-				// Since "callvote map <mapname>" is the only map vote command, we can verify by checking g_map_list.
-				bool is_valid_map = false;
-				if (!level.vote_arg.empty() && g_map_list->string[0]) {
-					char *token;
-					const char *mlist = g_map_list->string;
-					while (*(token = COM_Parse(&mlist))) {
-						if (!Q_strcasecmp(token, level.vote_arg.c_str())) {
-							is_valid_map = true;
-							break;
-						}
-					}
-				}
-
-				if (is_valid_map) {
-					gi.Com_PrintFmt("Vote state was cleared but recovering map change to: {}\n", level.vote_arg);
-					// Store in level.nextmap buffer to avoid dangling pointer
-					if (level.vote_arg.length() >= sizeof(level.nextmap)) {
-						gi.Com_PrintFmt("Vote execution cancelled: map name too long.\n");
-						level.vote_execute_time = 0_sec;
-						level.vote_time = 0_sec;
-						level.vote_client = nullptr;
-						level.vote_arg.clear();
-						return;
-					}
-					Q_strlcpy(level.nextmap, level.vote_arg.c_str(), sizeof(level.nextmap));
-					level.vote_execute_time = 0_sec;
-					level.vote_time = 0_sec;
-					level.vote_client = nullptr;
-					level.vote_arg.clear();
-					level.changemap = level.nextmap;  // Safe pointer
-					ExitLevel();
-					return;
-				}
-
-				// If not a map vote, attempt safe recovery for simple numeric votes such as "scorelimit".
-				// These are identified by a purely numeric vote_arg which is within a sane range.
-				if (!level.vote_arg.empty()) {
-					const char *arg = level.vote_arg.c_str();
-					char *endptr = nullptr;
-					long value = strtol(arg, &endptr, 10);
-
-					// Accept only strictly numeric values with no trailing junk and within [0, 9999].
-					if (endptr && *endptr == '\0' && value >= 0 && value <= 9999) {
-						gi.Com_PrintFmt("Vote state was cleared but recovering numeric vote with value: {}\n", level.vote_arg);
-
-						// Apply scorelimit vote directly using existing helper, so any messaging/cvar logic stays centralized.
-						// This mirrors what would have happened via Vote_Passed -> Vote_Pass_Scorelimit.
-						level.vote_execute_time = 0_sec;
-						level.vote_time = 0_sec;
-						level.vote_client = nullptr;
-
-						// Vote_Pass_Scorelimit reads level.vote_arg and applies the cvar.
-						Vote_Pass_Scorelimit();
-
-						// Clear arg afterwards to avoid confusing any subsequent logic.
-						level.vote_arg.clear();
-						return;
-					}
-				}
-
-				// If we get here, we couldn't safely recover this non-map vote.
-				gi.Com_PrintFmt("Vote execution cancelled: vote state was cleared and cannot recover command (was likely a non-map vote).\n");
-				level.vote_execute_time = 0_sec;
-				level.vote_time = 0_sec;
-				level.vote_client = nullptr;
-				level.vote_arg.clear();
-				return;
-			}
-			Vote_Passed();
-		}
-		return;
-	}
-
-	if (!level.vote_time)
-		return;
-
-	if (!level.vote_client)
-		return;
-
-	// Validate vote state - if vote pointer is null, clear the vote
-	if (!level.vote) {
-		gi.LocBroadcast_Print(PRINT_HIGH, "Vote state invalid, cancelling vote.\n");
-		level.vote_time = 0_sec;
-		level.vote_execute_time = 0_sec;
-		level.vote_client = nullptr;
-		level.vote_arg.clear();
-		return;
-	}
-	
-	// give it a minimum duration
-	if (level.time - level.vote_time < 1_sec)
+static void UpdateActiveVote() {
+	// Give it a minimum duration
+	if (level.time - level.vote_state.start_time < 1_sec)
 		return;
 
 	// Validate vote counts don't exceed voting clients (safety check)
-	int total_votes = level.vote_yes + level.vote_no;
-	if (total_votes > level.num_voting_clients) {
+	int total_votes = level.vote_state.yes_votes + level.vote_state.no_votes;
+	if (total_votes > level.vote_state.num_eligible) {
 		// Recalculate votes from actual client states
-		level.vote_yes = 0;
-		level.vote_no = 0;
+		level.vote_state.yes_votes = 0;
+		level.vote_state.no_votes = 0;
 		for (auto ec : active_clients()) {
 			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
 				continue;
 			if (ec->client->sess.is_a_bot)
 				continue;
 			if (ec->client->pers.voted == 1)
-				level.vote_yes++;
+				level.vote_state.yes_votes++;
 			else if (ec->client->pers.voted == -1)
-				level.vote_no++;
+				level.vote_state.no_votes++;
 		}
 	}
 
-	if (level.time - level.vote_time >= 30_sec) {
+	// Check timeout
+	if (level.time - level.vote_state.start_time >= 30_sec) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote timed out.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
-		// Vote timed out - clear all state
-		level.vote_time = 0_sec;
-		level.vote_execute_time = 0_sec;
-		level.vote = nullptr;
-		level.vote_client = nullptr;
-		level.vote_arg.clear();
-	} else {
-		// Use proper majority calculation: need more than half
-		// This ensures: 2 voters need 2, 3 voters need 2, 4 voters need 3, etc.
-		int halfpoint = level.num_voting_clients / 2;
-		if (level.vote_yes > halfpoint) {
-			// execute the command, then remove the vote
-			gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
-			level.vote_execute_time = level.time + 3_sec;
-			// Clear vote_time to stop checking, but KEEP level.vote and level.vote_arg for execution
-			level.vote_time = 0_sec;
-			AnnouncerSound(world, "vote_passed", nullptr, false);
-		} else if (level.vote_no >= halfpoint) {
-			// same behavior as a timeout
-			gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
-			AnnouncerSound(world, "vote_failed", nullptr, false);
-			// Vote failed - clear all state
-			level.vote_time = 0_sec;
-			level.vote_execute_time = 0_sec;
-			level.vote = nullptr;
-			level.vote_client = nullptr;
-			level.vote_arg.clear();
-		} else {
-			// still waiting for a majority
+		TransitionVoteState(VoteState::FAILED);
+		return;
+	}
+
+	// Check majority
+	int halfpoint = level.vote_state.num_eligible / 2;
+	if (level.vote_state.yes_votes > halfpoint) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
+		AnnouncerSound(world, "vote_passed", nullptr, false);
+		TransitionVoteState(VoteState::PASSED);
+	} else if (level.vote_state.no_votes >= halfpoint) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
+		AnnouncerSound(world, "vote_failed", nullptr, false);
+		TransitionVoteState(VoteState::FAILED);
+	}
+}
+
+static void CheckVote(void) {
+	if (!deathmatch->integer)
+		return;
+
+	switch (level.vote_state.state) {
+		case VoteState::IDLE:
+			// Nothing to do
 			return;
-		}
+
+		case VoteState::ACTIVE:
+			// Validate state
+			if (!level.vote_state.command || !level.vote_state.caller) {
+				gi.LocBroadcast_Print(PRINT_HIGH, "Vote state invalid, cancelling vote.\n");
+				TransitionVoteState(VoteState::FAILED);
+				return;
+			}
+			UpdateActiveVote();
+			break;
+
+		case VoteState::PASSED:
+			// Wait for execution time
+			if (level.time >= level.vote_state.execute_time) {
+				TransitionVoteState(VoteState::EXECUTING);
+			}
+			break;
+
+		case VoteState::EXECUTING:
+			// Execute the vote command
+			if (!level.vote_state.command) {
+				// Command was lost - try minimal recovery for map votes only
+				if (!level.vote_state.arg.empty() && g_map_list->string[0]) {
+					char *token;
+					const char *mlist = g_map_list->string;
+					bool is_valid_map = false;
+					while (*(token = COM_Parse(&mlist))) {
+						if (!Q_strcasecmp(token, level.vote_state.arg.c_str())) {
+							is_valid_map = true;
+							break;
+						}
+					}
+					if (is_valid_map && level.vote_state.arg.length() < sizeof(level.nextmap)) {
+						gi.Com_PrintFmt("Vote command lost but recovering map change to: {}\n", level.vote_state.arg);
+						Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
+						level.changemap = level.nextmap;
+						TransitionVoteState(VoteState::COMPLETE);
+						ExitLevel();
+						return;
+					}
+				}
+				gi.LocBroadcast_Print(PRINT_HIGH, "Vote execution failed: command was lost.\n");
+				TransitionVoteState(VoteState::FAILED);
+				return;
+			}
+			Vote_Passed();
+			break;
+
+		case VoteState::FAILED:
+		case VoteState::COMPLETE:
+			// Auto-transition to IDLE (handled by TransitionVoteState)
+			TransitionVoteState(VoteState::IDLE);
+			break;
 	}
 }
 
@@ -2614,7 +2560,7 @@ static void CheckDMIntermissionExit(void) {
 	}
 
 	// vote in progress
-	if (level.vote_time || level.vote_execute_time) {
+	if (level.vote_state.state != VoteState::IDLE) {
 		ready = 0;
 		not_ready = 1;
 	}
@@ -2966,18 +2912,20 @@ void CalculateRanks() {
 	CheckDMExitRules();
 
 	// Recalculate vote counts if a vote is in progress (players may have joined/left)
-	if (level.vote_time && !level.vote_execute_time) {
-		level.vote_yes = 0;
-		level.vote_no = 0;
+	if (level.vote_state.state == VoteState::ACTIVE) {
+		level.vote_state.yes_votes = 0;
+		level.vote_state.no_votes = 0;
+		level.vote_state.num_eligible = 0;
 		for (auto ec : active_clients()) {
 			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
 				continue;
 			if (ec->client->sess.is_a_bot)
 				continue;
+			level.vote_state.num_eligible++;
 			if (ec->client->pers.voted == 1)
-				level.vote_yes++;
+				level.vote_state.yes_votes++;
 			else if (ec->client->pers.voted == -1)
-				level.vote_no++;
+				level.vote_state.no_votes++;
 		}
 	}
 }

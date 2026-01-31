@@ -381,6 +381,15 @@ struct vcmds_t {
 };
 extern vcmds_t vote_cmds[];
 
+enum class VoteState {
+	IDLE,			// No vote in progress
+	ACTIVE,			// Vote is being voted on
+	PASSED,			// Vote passed, waiting to execute
+	EXECUTING,		// Currently executing the vote command
+	FAILED,			// Vote failed or timed out
+	COMPLETE		// Vote executed successfully
+};
+
 extern int ii_highlight;
 extern int ii_duel_header;
 extern int ii_teams_red_default;
@@ -783,6 +792,30 @@ constexpr gtime_t operator"" _hz(unsigned long long int s) {
 #define SERVER_TICK_RATE gi.tick_rate // in hz
 extern gtime_t FRAME_TIME_S;
 extern gtime_t FRAME_TIME_MS;
+
+// Vote state machine data structure (defined after gtime_t)
+struct VoteStateData {
+	VoteState state;
+	vcmds_t *command;
+	std::string arg;
+	gclient_t *caller;
+	gtime_t start_time;
+	gtime_t execute_time;
+	int8_t yes_votes;
+	int8_t no_votes;
+	int8_t num_eligible;
+	
+	VoteStateData() : 
+		state(VoteState::IDLE),
+		command(nullptr),
+		caller(nullptr),
+		start_time(0_sec),
+		execute_time(0_sec),
+		yes_votes(0),
+		no_votes(0),
+		num_eligible(0)
+	{}
+};
 
 // view pitching times
 inline gtime_t DAMAGE_TIME_SLACK() {
@@ -1633,15 +1666,9 @@ struct level_locals_t {
 	char		gamemod_name[64];
 	char		gametype_name[64];
 
-	//voting
-	gclient_t	*vote_client;
-	gtime_t		vote_time;				// level.time vote was called
-	gtime_t		vote_execute_time;		// time the vote is executed
-	int8_t		vote_yes;
-	int8_t		vote_no;
-	int8_t		num_voting_clients;		// set by CalculateRanks
-	vcmds_t		*vote;
-	std::string vote_arg;
+	//voting (state machine)
+	VoteStateData vote_state;
+	int8_t		num_voting_clients;		// set by CalculateRanks (kept for compatibility)
 
 	uint8_t		num_connected_clients;
 	uint8_t		num_nonspectator_clients;	// includes connecting clients
@@ -2560,6 +2587,9 @@ int TeamBalance(bool force);
 void Cmd_ReadyUp_f(gentity_t *ent);
 
 void VoteCommandStore(gentity_t *ent);
+void TransitionVoteState(VoteState new_state);
+void ClearVote();
+bool IsVoteStateValid();
 vcmds_t *FindVoteCmdByName(const char *name);
 void Vote_Pass_Map();
 void Vote_Pass_RestartMatch();

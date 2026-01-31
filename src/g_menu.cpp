@@ -8,10 +8,10 @@
 constexpr const char *BREAKER = "\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37";
 
 bool Vote_Menu_Active(gentity_t *ent) {
-	if (level.vote_time <= 0_sec)
+	if (level.vote_state.state != VoteState::ACTIVE)
 		return false;
 
-	if (!level.vote_client)
+	if (!level.vote_state.caller)
 		return false;
 
 	if (ent->client->pers.voted)
@@ -683,10 +683,10 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 	}
 	
 	// Now set vote data - use explicit assignment
-	level.vote = cc;
-	level.vote_arg.clear();
-	level.vote_arg.reserve(64);
-	level.vote_arg.assign(map_name_std.c_str(), map_name_std.length());
+	level.vote_state.command = cc;
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(64);
+	level.vote_state.arg.assign(map_name_std.c_str(), map_name_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -755,15 +755,15 @@ void G_Menu_CallVote_Map(gentity_t *ent, menu_hnd_t *p) {
 
 void G_Menu_CallVote_NextMap(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote = FindVoteCmdByName("nextmap");
-	level.vote_arg.clear();
+	level.vote_state.command = FindVoteCmdByName("nextmap");
+	level.vote_state.arg.clear();
 	VoteCommandStore(ent);
 }
 
 void G_Menu_CallVote_Restart(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote = FindVoteCmdByName("restart");
-	level.vote_arg.clear();
+	level.vote_state.command = FindVoteCmdByName("restart");
+	level.vote_state.arg.clear();
 	VoteCommandStore(ent);
 }
 
@@ -887,10 +887,10 @@ void G_Menu_CallVote_GameType_Selection(gentity_t *ent, menu_hnd_t *p) {
 
 	// Set vote data – mirror the map vote logic so the backing storage and
 	// lifetime are identical and cannot be clobbered on first use.
-	level.vote = FindVoteCmdByName("gametype");
-	level.vote_arg.clear();
-	level.vote_arg.reserve(16);
-	level.vote_arg.assign(gametype_value_std.c_str(), gametype_value_std.length());
+	level.vote_state.command = FindVoteCmdByName("gametype");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(16);
+	level.vote_state.arg.assign(gametype_value_std.c_str(), gametype_value_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -984,10 +984,10 @@ void G_Menu_CallVote_TimeLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
 	std::string time_value_std = time_value_final;
 
 	// Set vote data – mirror the scorelimit/map vote logic for consistency
-	level.vote = FindVoteCmdByName("timelimit");
-	level.vote_arg.clear();
-	level.vote_arg.reserve(16);
-	level.vote_arg.assign(time_value_std.c_str(), time_value_std.length());
+	level.vote_state.command = FindVoteCmdByName("timelimit");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(16);
+	level.vote_state.arg.assign(time_value_std.c_str(), time_value_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -1080,10 +1080,10 @@ void G_Menu_CallVote_ScoreLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
 	
 	// Set vote data – mirror the map vote logic so the backing storage and
 	// lifetime are identical and cannot be clobbered on first use.
-	level.vote = FindVoteCmdByName("scorelimit");
-	level.vote_arg.clear();
-	level.vote_arg.reserve(16);
-	level.vote_arg.assign(limit_value_std.c_str(), limit_value_std.length());
+	level.vote_state.command = FindVoteCmdByName("scorelimit");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(16);
+	level.vote_state.arg.assign(limit_value_std.c_str(), limit_value_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -1101,15 +1101,15 @@ void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p) {
 
 void G_Menu_CallVote_ShuffleTeams(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote = FindVoteCmdByName("shuffle");
-	level.vote_arg.clear();
+	level.vote_state.command = FindVoteCmdByName("shuffle");
+	level.vote_state.arg.clear();
 	VoteCommandStore(ent);
 }
 
 void G_Menu_CallVote_BalanceTeams(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote = FindVoteCmdByName("balance");
-	level.vote_arg.clear();
+	level.vote_state.command = FindVoteCmdByName("balance");
+	level.vote_state.arg.clear();
 	VoteCommandStore(ent);
 }
 
@@ -1119,8 +1119,8 @@ void G_Menu_CallVote_Unlagged(gentity_t *ent, menu_hnd_t *p) {
 
 void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote = FindVoteCmdByName("cointoss");
-	level.vote_arg.clear();
+	level.vote_state.command = FindVoteCmdByName("cointoss");
+	level.vote_state.arg.clear();
 	VoteCommandStore(ent);
 }
 
@@ -1286,10 +1286,10 @@ void G_Menu_CallVote_Powerups_Selection(gentity_t *ent, menu_hnd_t *p) {
 	std::string powerup_value_std = powerup_value_final;
 
 	// Set vote data
-	level.vote = FindVoteCmdByName("powerups");
-	level.vote_arg.clear();
-	level.vote_arg.reserve(2);
-	level.vote_arg.assign(powerup_value_std.c_str(), powerup_value_std.length());
+	level.vote_state.command = FindVoteCmdByName("powerups");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(2);
+	level.vote_state.arg.assign(powerup_value_std.c_str(), powerup_value_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -1383,10 +1383,10 @@ void G_Menu_CallVote_FriendlyFire_Selection(gentity_t *ent, menu_hnd_t *p) {
 	std::string ff_value_std = ff_value_final;
 
 	// Set vote data
-	level.vote = FindVoteCmdByName("friendlyfire");
-	level.vote_arg.clear();
-	level.vote_arg.reserve(2);
-	level.vote_arg.assign(ff_value_std.c_str(), ff_value_std.length());
+	level.vote_state.command = FindVoteCmdByName("friendlyfire");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(2);
+	level.vote_state.arg.assign(ff_value_std.c_str(), ff_value_std.length());
 
 	VoteCommandStore(ent);
 }
@@ -1414,7 +1414,7 @@ static void G_Menu_CallVote(gentity_t *ent, menu_hnd_t *p) {
 /*-----------------------------------------------------------------------*/
 
 static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
-	if (!level.vote_time) {
+	if (level.vote_state.state != VoteState::ACTIVE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
 		P_Menu_Close(ent);
 		return;
@@ -1425,7 +1425,7 @@ static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
 		return;
 	}
 
-	level.vote_yes++;
+	level.vote_state.yes_votes++;
 	ent->client->pers.voted = 1;
 
 	gi.LocClient_Print(ent, PRINT_HIGH, "Vote cast.\n");
@@ -1433,7 +1433,7 @@ static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
 }
 
 static void G_Menu_Vote_No(gentity_t *ent, menu_hnd_t *p) {
-	if (!level.vote_time) {
+	if (level.vote_state.state != VoteState::ACTIVE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
 		P_Menu_Close(ent);
 		return;
@@ -1444,7 +1444,7 @@ static void G_Menu_Vote_No(gentity_t *ent, menu_hnd_t *p) {
 		return;
 	}
 
-	level.vote_no++;
+	level.vote_state.no_votes++;
 	ent->client->pers.voted = -1;
 
 	gi.LocClient_Print(ent, PRINT_HIGH, "Vote cast.\n");
@@ -1478,7 +1478,7 @@ static void G_Menu_Vote_Update(gentity_t *ent) {
 		return;
 	}
 
-	int timeout = 30 - (level.time - level.vote_time).seconds<int>();
+	int timeout = 30 - (level.time - level.vote_state.start_time).seconds<int>();
 
 	if (timeout <= 0) {
 		P_Menu_Close(ent);
@@ -1487,22 +1487,22 @@ static void G_Menu_Vote_Update(gentity_t *ent) {
 
 	menu_t *entries = ent->client->menu->entries;
 	int i = 2;
-	Q_strlcpy(entries[i].text, G_Fmt("{} called a vote:", level.vote_client->resp.netname).data(), sizeof(entries[i].text));
+	Q_strlcpy(entries[i].text, G_Fmt("{} called a vote:", level.vote_state.caller->resp.netname).data(), sizeof(entries[i].text));
 	
 	i = 4;
-	if (!level.vote) {
+	if (!level.vote_state.command) {
 		P_Menu_Close(ent);
 		return;
 	}
-	Q_strlcpy(entries[i].text, G_Fmt("{} {}", level.vote->name, level.vote_arg).data(), sizeof(entries[i].text));
+	Q_strlcpy(entries[i].text, G_Fmt("{} {}", level.vote_state.command->name, level.vote_state.arg).data(), sizeof(entries[i].text));
 
-	if (level.vote_time + 3_sec > level.time) {
+	if (level.vote_state.start_time + 3_sec > level.time) {
 		i = 7;
 		Q_strlcpy(entries[i].text, "GET READY TO VOTE!", sizeof(entries[i].text));
 		entries[i].SelectFunc = nullptr;
 
 		i = 8;
-		int time = 3 - (level.time - level.vote_time).seconds<int>();
+		int time = 3 - (level.time - level.vote_state.start_time).seconds<int>();
 		Q_strlcpy(entries[i].text, G_Fmt("{}...", time).data(), sizeof(entries[i].text));
 		entries[i].SelectFunc = nullptr;
 		return;
