@@ -857,9 +857,11 @@ void GT_Changes() {
 
 	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
 
-	GT_PrecacheAssets();
-	GT_SetLongName();
-	gi.LocBroadcast_Print(PRINT_CENTER, "{}", level.gametype_name);
+	// Return immediately after queuing map change to avoid rendering state corruption.
+	// GT_PrecacheAssets() and GT_SetLongName() will be called during normal map initialization
+	// in SpawnEntities() -> PrecacheStartItems() -> PrecacheAssets() -> GT_PrecacheAssets()
+	// and SpawnEntities() -> GT_SetLongName().
+	return;
 }
 
 /*
