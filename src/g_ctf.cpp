@@ -199,21 +199,27 @@ CTF_ResetTeamFlag
 ============
 */
 void CTF_ResetTeamFlag(team_t team) {
-	if (!(GTF(GTF_CTF)))
-		return;
-
+	// Always attempt to clean up flags, even when transitioning AWAY from CTF
+	// This prevents crashes when changing from CTF to other gametypes
+	
 	gentity_t *ent;
 	const char *c = team == TEAM_RED ? ITEM_CTF_FLAG_RED : ITEM_CTF_FLAG_BLUE;
 
 	ent = nullptr;
 	while ((ent = G_FindByString<&gentity_t::classname>(ent, c)) != nullptr) {
-		if (ent->spawnflags.has(SPAWNFLAG_ITEM_DROPPED))
+		if (ent->spawnflags.has(SPAWNFLAG_ITEM_DROPPED)) {
 			G_FreeEntity(ent);
-		else {
-			ent->svflags &= ~SVF_NOCLIENT;
-			ent->solid = SOLID_TRIGGER;
-			gi.linkentity(ent);
-			ent->s.event = EV_ITEM_RESPAWN;
+		} else {
+			// Only restore flags if we're in a CTF gametype
+			if (GTF(GTF_CTF)) {
+				ent->svflags &= ~SVF_NOCLIENT;
+				ent->solid = SOLID_TRIGGER;
+				gi.linkentity(ent);
+				ent->s.event = EV_ITEM_RESPAWN;
+			} else {
+				// Transitioning away from CTF, free the flag entity
+				G_FreeEntity(ent);
+			}
 		}
 	}
 }
@@ -224,9 +230,9 @@ CTF_ResetFlags
 ============
 */
 void CTF_ResetFlags() {
-	if (!(GTF(GTF_CTF)))
-		return;
-
+	// Always attempt to clean up flags, even when transitioning AWAY from CTF
+	// CTF_ResetTeamFlag() will handle both restoration (if in CTF) and cleanup (if not)
+	
 	CTF_ResetTeamFlag(TEAM_RED);
 	CTF_ResetTeamFlag(TEAM_BLUE);
 }
