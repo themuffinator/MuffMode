@@ -705,6 +705,20 @@ void ChangeGametype(gametype_t gt) {
 				gi.cvar_forceset("g_nadefest", "0");
 		}
 		
+		// Clear duel handicap data when switching away from duel mode
+		if (g_gametype->integer == (int)gametype_t::GT_DUEL && gt != gametype_t::GT_DUEL) {
+			// Clear all handicap data for all clients
+			for (auto ec : active_clients()) {
+				if (!ec->client)
+					continue;
+				
+				ec->client->handicap.restricted_weapons = 0;
+				ec->client->handicap.damage_dealt_multiplier = 1.0f;
+				ec->client->handicap.damage_received_multiplier = 1.0f;
+				ec->client->handicap.health_multiplier = 1.0f;
+			}
+		}
+		
 		// Execute gametype-specific cfg when gametype actually changes
 		// This ensures cfg runs on gametype change, not on every map load
 		if (g_gametype_cfg->integer && deathmatch->integer) {
