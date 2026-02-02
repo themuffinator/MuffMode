@@ -1300,7 +1300,9 @@ static void SetMiniScoreStats(gentity_t *ent) {
 		int16_t	other_other_num = -1;
 
 		if (ent->client->sess.team == TEAM_FREE || ent->client->follow_target) {
-			own_num = ent->client->follow_target ? ent->client->follow_target->client - game.clients : ent->client - game.clients;
+			own_num = (ent->client->follow_target && ent->client->follow_target->client) 
+				? ent->client->follow_target->client - game.clients 
+				: ent->client - game.clients;
 			own_rank = game.clients[own_num].resp.rank;
 			own_rank &= ~RANK_TIED_FLAG;
 		}

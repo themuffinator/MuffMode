@@ -3663,7 +3663,8 @@ void BeginIntermission(gentity_t *targ) {
 	
 	// Clean up any dangling entity references before map transition
 	for (auto ec : active_clients()) {
-		if (ec->client->follow_target && !ec->client->follow_target->inuse) {
+		// Clear follow_target if entity is not in use OR if client pointer is invalid
+		if (ec->client->follow_target && (!ec->client->follow_target->inuse || !ec->client->follow_target->client)) {
 			ec->client->follow_target = nullptr;
 		}
 		if (ec->client->viewed && !ec->client->viewed->inuse) {
@@ -3766,7 +3767,9 @@ void ExitLevel() {
 			gi.Com_Print(s);
 		} else {
 			gentity_t *ent = &g_entities[1];
-			const char *name = ent->client->follow_target ? ent->client->follow_target->client->resp.netname : ent->client->resp.netname;
+			const char *name = (ent->client->follow_target && ent->client->follow_target->client) 
+				? ent->client->follow_target->client->resp.netname 
+				: ent->client->resp.netname;
 
 			s = G_Fmt("screenshot {}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n", gt_short_name_upper[g_gametype->integer],
 				name, level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();

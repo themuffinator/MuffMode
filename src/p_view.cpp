@@ -1427,7 +1427,7 @@ void ClientEndServerFrame(gentity_t *ent) {
 	if (!ClientIsPlaying(ent->client) || ent->client->eliminated) {
 		G_SetSpectatorStats(ent);
 
-		if (ent->client->follow_target) {
+		if (ent->client->follow_target && ent->client->follow_target->client) {
 			ent->client->ps.screen_blend = ent->client->follow_target->client->ps.screen_blend;
 			ent->client->ps.damage_blend = ent->client->follow_target->client->ps.damage_blend;
 

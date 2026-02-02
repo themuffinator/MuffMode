@@ -2679,10 +2679,20 @@ static std::string GetVotableGametypesList() {
 }
 
 static bool Vote_Val_Gametype(gentity_t *ent) {
+	// Ensure exactly 3 arguments: callvote, gametype, <gametype_name>
+	if (gi.argc() != 3) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: callvote gametype <gametype_name>\n");
+		std::string votable_list = GetVotableGametypesList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid gametypes are: {}\n", votable_list.c_str());
+		}
+		return false;
+	}
+	
 	gametype_t gt = GT_IndexFromString(gi.argv(2));
 	
 	if (gt == GT_NONE) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid gametype.\n");
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid gametype: '{}'\n", gi.argv(2));
 		std::string votable_list = GetVotableGametypesList();
 		if (!votable_list.empty()) {
 			gi.LocClient_Print(ent, PRINT_HIGH, "Valid gametypes are: {}\n", votable_list.c_str());
