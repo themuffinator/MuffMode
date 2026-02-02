@@ -1784,6 +1784,13 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 	gi.FreeTags(TAG_LEVEL);
 
 	memset(&level, 0, sizeof(level));
+	
+	// CRITICAL: Reinitialize all C++ objects after memset
+	// memset corrupts C++ objects like std::string, so we must reconstruct them
+	new (&level.vote_state) VoteStateData();
+	new (&level.entstring) std::string();
+	new (&level.match_id) std::string();
+	
 	memset(g_entities, 0, game.maxentities * sizeof(g_entities[0]));
 	
 	// all other flags are not important atm

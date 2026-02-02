@@ -2358,17 +2358,30 @@ static void UpdateActiveVote() {
 
 	// Check majority
 	int halfpoint = level.vote_state.num_eligible / 2;
-	MuffModeLog("VOTE", "Vote count: yes=%d, no=%d, eligible=%d, halfpoint=%d", 
-	           level.vote_state.yes_votes, level.vote_state.no_votes, 
-	           level.vote_state.num_eligible, halfpoint);
+	
+	// Only log vote count when it changes (prevents spam at high framerates)
+	static int last_yes_votes = -1;
+	static int last_no_votes = -1;
+	if (level.vote_state.yes_votes != last_yes_votes || level.vote_state.no_votes != last_no_votes) {
+		MuffModeLog("VOTE", "Vote count: yes=%d, no=%d, eligible=%d, halfpoint=%d", 
+		           level.vote_state.yes_votes, level.vote_state.no_votes, 
+		           level.vote_state.num_eligible, halfpoint);
+		last_yes_votes = level.vote_state.yes_votes;
+		last_no_votes = level.vote_state.no_votes;
+	}
+	
 	if (level.vote_state.yes_votes > halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
 		AnnouncerSound(world, "vote_passed", nullptr, false);
 		TransitionVoteState(VoteState::PASSED);
+		// Reset static vars when vote completes
+		last_yes_votes = last_no_votes = -1;
 	} else if (level.vote_state.no_votes >= halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
 		TransitionVoteState(VoteState::FAILED);
+		// Reset static vars when vote completes
+		last_yes_votes = last_no_votes = -1;
 	}
 }
 

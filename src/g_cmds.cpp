@@ -2456,15 +2456,23 @@ void Vote_Pass_Map() {
 	// Store map name in level.nextmap buffer to avoid dangling pointer
 	// Must copy to safe storage since vote state will be cleared after this function returns
 	
+	MuffModeLog("MAP", "Vote_Pass_Map: called with arg='%s'", level.vote_state.arg.c_str());
+	
 	if (level.vote_state.arg.empty()) {
-		gi.Com_Error("Vote_Pass_Map: vote_arg is empty");
-		MuffModeLog("MAP", "ERROR: Vote_Pass_Map called with empty vote_arg");
+		const char *error_msg = "Vote_Pass_Map: vote_arg is empty";
+		gi.Com_Print(error_msg);
+		gi.Com_Print("\n");
+		MuffModeLog("MAP", "ERROR: %s", error_msg);
+		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: no map name specified.\n");
 		return;
 	}
 	
 	if (level.vote_state.arg.length() >= sizeof(level.nextmap)) {
-		gi.Com_Error("Map name too long in vote execution");
-		MuffModeLog("MAP", "ERROR: Map name too long: %s", level.vote_state.arg.c_str());
+		const char *error_msg = G_Fmt("Map name too long: {}", level.vote_state.arg).data();
+		gi.Com_Print(error_msg);
+		gi.Com_Print("\n");
+		MuffModeLog("MAP", "ERROR: %s", error_msg);
+		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: map name too long.\n");
 		return;
 	}
 	
@@ -2472,8 +2480,11 @@ void Vote_Pass_Map() {
 	
 	// Validate the copy was successful and the string is valid
 	if (!level.nextmap[0]) {
-		gi.Com_Error("Vote_Pass_Map: Failed to copy map name to nextmap");
-		MuffModeLog("MAP", "ERROR: Failed to copy map name to nextmap");
+		const char *error_msg = "Vote_Pass_Map: Failed to copy map name to nextmap";
+		gi.Com_Print(error_msg);
+		gi.Com_Print("\n");
+		MuffModeLog("MAP", "ERROR: %s", error_msg);
+		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: internal error.\n");
 		return;
 	}
 	
@@ -2521,6 +2532,9 @@ static bool IsMapValid(const char *mapname) {
 }
 
 static bool Vote_Val_Map(gentity_t *ent) {
+	// Debug logging for vote argument parsing
+	MuffModeLog("VOTE", "Vote_Val_Map: argc=%d, argv(2)='%s'", gi.argc(), gi.argc() >= 3 ? gi.argv(2) : "(none)");
+	
 	// Helper function to get combined and deduplicated map list
 	auto get_combined_maps = []() -> std::vector<std::string> {
 		std::vector<std::string> all_maps;
@@ -2581,6 +2595,12 @@ static bool Vote_Val_Map(gentity_t *ent) {
 		} else {
 			gi.LocClient_Print(ent, PRINT_HIGH, "No map list or pool configured.\n");
 		}
+		return false;
+	}
+
+	// Check for empty map argument (catches "callvote map \"\"")
+	if (!gi.argv(2)[0]) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Map name cannot be empty.\n");
 		return false;
 	}
 
@@ -3360,6 +3380,10 @@ static bool ValidVoteCommand(gentity_t *ent) {
 		raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
 	}
 	
+	// Debug logging for vote argument storage
+	MuffModeLog("VOTE", "VoteCommandStore: command='%s', raw_arg='%s', argc=%d", 
+	           cc->name, raw_arg.c_str(), gi.argc());
+	
 	// Limit vote_arg length to prevent message buffer overflow
 	// MAX_QPATH is 64, but we allow a bit more for safety (128 chars should be plenty)
 	constexpr size_t MAX_VOTE_ARG_LENGTH = 128;
@@ -3368,6 +3392,19 @@ static bool ValidVoteCommand(gentity_t *ent) {
 		return false;
 	}
 	level.vote_state.arg = raw_arg;
+	
+	// Debug: Verify assignment was successful - use hex dump to see actual bytes
+	std::string hex_dump;
+	for (size_t i = 0; i < level.vote_state.arg.length() && i < 20; i++) {
+		char buf[8];
+		snprintf(buf, sizeof(buf), "%02X ", (unsigned char)level.vote_state.arg[i]);
+		hex_dump += buf;
+	}
+	MuffModeLog("VOTE", "ValidVoteCommand: After assignment, level.vote_state.arg length=%d, hex=[%s]", 
+	           (int)level.vote_state.arg.length(), hex_dump.c_str());
+	MuffModeLog("VOTE", "ValidVoteCommand: raw_arg='%s', level.vote_state.arg='%s'",
+	           raw_arg.c_str(), level.vote_state.arg.c_str());
+	
 	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_state.arg);
 	return true;
 }
@@ -3383,6 +3420,10 @@ void VoteCommandStore(gentity_t *ent) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Internal error: vote command was lost.\n");
 		return;
 	}
+
+	// Debug: Check arg state at entry to VoteCommandStore
+	MuffModeLog("VOTE", "VoteCommandStore: Entry, level.vote_state.arg='%s' (length=%d)", 
+	           level.vote_state.arg.c_str(), (int)level.vote_state.arg.length());
 
 	// Initialize vote state
 	level.vote_state.caller = ent->client;
