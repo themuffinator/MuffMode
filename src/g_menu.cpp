@@ -796,7 +796,7 @@ static bool IsGametypeVotable_Menu(gametype_t gt) {
 	const char *votable_list = g_votable_gametypes->string;
 	char *token;
 
-	while (*(token = COM_Parse(&votable_list))) {
+	while ((token = COM_Parse(&votable_list)) && *token) {
 		if (!Q_strcasecmp(token, gt_short_name[(int)gt]))
 			return true;
 	}

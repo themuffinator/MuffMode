@@ -2512,7 +2512,7 @@ static bool IsMapValid(const char *mapname) {
 	if (g_map_pool->string[0]) {
 		const char *pool = g_map_pool->string;
 
-		while (*(token = COM_Parse(&pool))) {
+		while ((token = COM_Parse(&pool)) && *token) {
 			if (!Q_strcasecmp(token, mapname))
 				return true;
 		}
@@ -2522,7 +2522,7 @@ static bool IsMapValid(const char *mapname) {
 	if (g_map_list->string[0]) {
 		const char *mlist = g_map_list->string;
 
-		while (*(token = COM_Parse(&mlist))) {
+		while ((token = COM_Parse(&mlist)) && *token) {
 			if (!Q_strcasecmp(token, mapname))
 				return true;
 		}
@@ -2552,8 +2552,8 @@ static bool Vote_Val_Map(gentity_t *ent) {
 		// Add maps from g_map_pool first
 		if (g_map_pool->string[0]) {
 			const char *pool = g_map_pool->string;
-			while (*(token = COM_Parse(&pool))) {
-				if (*token && !map_exists(token)) {
+			while ((token = COM_Parse(&pool)) && *token) {
+				if (!map_exists(token)) {
 					all_maps.push_back(token);
 				}
 			}
@@ -2562,8 +2562,8 @@ static bool Vote_Val_Map(gentity_t *ent) {
 		// Add maps from g_map_list (skip duplicates)
 		if (g_map_list->string[0]) {
 			const char *mlist = g_map_list->string;
-			while (*(token = COM_Parse(&mlist))) {
-				if (*token && !map_exists(token)) {
+			while ((token = COM_Parse(&mlist)) && *token) {
+				if (!map_exists(token)) {
 					all_maps.push_back(token);
 				}
 			}
@@ -2658,7 +2658,7 @@ static bool IsGametypeVotable(gametype_t gt) {
 	const char *votable_list = g_votable_gametypes->string;
 	char *token;
 
-	while (*(token = COM_Parse(&votable_list))) {
+	while ((token = COM_Parse(&votable_list)) && *token) {
 		if (!Q_strcasecmp(token, gt_short_name[(int)gt]))
 			return true;
 	}
@@ -2687,7 +2687,7 @@ static std::string GetVotableGametypesList() {
 		char *token;
 		bool first = true;
 
-		while (*(token = COM_Parse(&votable_list))) {
+		while ((token = COM_Parse(&votable_list)) && *token) {
 			if (!first)
 				result += "|";
 			result += token;
@@ -3458,6 +3458,10 @@ void VoteCommandStore(gentity_t *ent) {
 	ent->client->pers.vote_count++;
 	AnnouncerSound(world, "vote_now", "misc/pc_up.wav", true);
 
+	// Transition to ACTIVE state BEFORE opening menus
+	// This ensures Vote_Menu_Active() returns true when P_Menu_Open() checks it
+	TransitionVoteState(VoteState::ACTIVE);
+
 	for (auto ec : active_players()) {
 		if (ec->svflags & SVF_BOT)
 			continue;
@@ -3478,9 +3482,6 @@ void VoteCommandStore(gentity_t *ent) {
 		P_Menu_Close(ec);
 		G_Menu_Vote_Open(ec);
 	}
-	
-	// Transition to ACTIVE state
-	TransitionVoteState(VoteState::ACTIVE);
 }
 
 /*

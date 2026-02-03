@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.43";
+constexpr const char *GAMEMOD_VERSION = "0.21.47";
 
 //==================================================================
 
@@ -164,6 +164,7 @@ enum ruleset_t : uint8_t {
 	RS_Q3A,
 	RS_VANILLA_PLUS,
 	RS_Q1,
+	RS_QC,
 	RS_NUM_RULESETS
 };
 #define RS( x ) game.ruleset == (x)
@@ -175,6 +176,7 @@ constexpr const char *rs_short_name[RS_NUM_RULESETS] = {
 	"q3a",
 	"vp",
 	"q",
+	"qc",
 };
 constexpr const char *rs_long_name[RS_NUM_RULESETS] = {
 	"",
@@ -183,6 +185,7 @@ constexpr const char *rs_long_name[RS_NUM_RULESETS] = {
 	"QUAKE III Arena style",
 	"Vanilla Plus",
 	"QUAKE style",
+	"Quake Champions",
 };
 
 constexpr const char *stock_maps[] = {
@@ -2548,8 +2551,12 @@ extern cvar_t *g_chaingun_hspread;
 extern cvar_t *g_chaingun_vspread;
 extern cvar_t *g_chaingun_spread_offset;
 extern cvar_t *g_machinegun_damage;
+extern cvar_t *g_machinegun_hspread;
+extern cvar_t *g_machinegun_vspread;
 extern cvar_t *g_hyperblaster_speed;
 extern cvar_t *g_railgun_damage;
+extern cvar_t *g_rocketlauncher_damage;
+extern cvar_t *g_rocketlauncher_speed;
 
 extern cvar_t *bot_name_prefix;
 

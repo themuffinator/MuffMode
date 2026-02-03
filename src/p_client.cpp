@@ -1265,7 +1265,7 @@ static void Player_GiveStartItems(gentity_t *ent, const char *ptr) {
 	char token_copy[MAX_TOKEN_CHARS];
 	const char *token;
 
-	while (*(token = COM_ParseEx(&ptr, ";"))) {
+	while ((token = COM_ParseEx(&ptr, ";")) && *token) {
 		Q_strlcpy(token_copy, token, sizeof(token_copy));
 		const char *ptr_copy = token_copy;
 
@@ -1452,6 +1452,29 @@ void InitClientPersistant(gentity_t *ent, gclient_t *client) {
 					client->pers.inventory[IT_WEAPON_CHAINFIST] = 1;
 					client->pers.inventory[IT_WEAPON_SHOTGUN] = 1;
 					client->pers.inventory[IT_AMMO_SHELLS] = 10;
+				} else if (RS(RS_QC)) {
+					// Quake Champions: random starting weapon (Shotgun, Machinegun, or Hyperblaster)
+					client->pers.max_ammo.fill(50);
+					client->pers.max_ammo[AMMO_BULLETS] = 200;
+					client->pers.max_ammo[AMMO_SHELLS] = 100;
+					client->pers.max_ammo[AMMO_CELLS] = 200;
+
+					client->pers.max_ammo[AMMO_TRAP] = 5;
+					client->pers.max_ammo[AMMO_FLECHETTES] = 200;
+					client->pers.max_ammo[AMMO_DISRUPTOR] = 12;
+					client->pers.max_ammo[AMMO_TESLA] = 5;
+
+					int weapon_choice = irandom(3); // 0 = Shotgun, 1 = Machinegun, 2 = Hyperblaster
+					if (weapon_choice == 0) {
+						client->pers.inventory[IT_WEAPON_SHOTGUN] = 1;
+						client->pers.inventory[IT_AMMO_SHELLS] = 50;
+					} else if (weapon_choice == 1) {
+						client->pers.inventory[IT_WEAPON_MACHINEGUN] = 1;
+						client->pers.inventory[IT_AMMO_BULLETS] = 200;
+					} else {
+						client->pers.inventory[IT_WEAPON_HYPERBLASTER] = 1;
+						client->pers.inventory[IT_AMMO_CELLS] = 200;
+					}
 				} else {
 					// fill with 50s, since it's our most common value
 					client->pers.max_ammo.fill(50);
@@ -1467,7 +1490,7 @@ void InitClientPersistant(gentity_t *ent, gclient_t *client) {
 					client->pers.inventory[IT_WEAPON_BLASTER] = 1;
 				}
 
-				if (deathmatch->integer) {
+				if (deathmatch->integer && game.ruleset != RS_QC) {
 					if (level.match_state < matchst_t::MATCH_IN_PROGRESS) {
 						for (size_t i = FIRST_WEAPON; i < LAST_WEAPON; i++) {
 							if (!level.weapon_count[i - FIRST_WEAPON])

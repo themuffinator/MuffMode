@@ -1260,7 +1260,7 @@ static void PrecacheStartItems() {
 	const char *token;
 	const char *ptr = g_start_items->string;
 
-	while (*(token = COM_ParseEx(&ptr, ";"))) {
+	while ((token = COM_ParseEx(&ptr, ";")) && *token) {
 		Q_strlcpy(token_copy, token, sizeof(token_copy));
 		const char *ptr_copy = token_copy;
 

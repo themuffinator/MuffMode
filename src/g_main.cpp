@@ -224,12 +224,16 @@ cvar_t *g_weapon_respawn_time;
 cvar_t *g_weapon_balance_dev;
 cvar_t *g_chaingun_max_shots;
 cvar_t *g_chaingun_damage;
-cvar_t *g_chaingun_hspread;
-cvar_t *g_chaingun_vspread;
-cvar_t *g_chaingun_spread_offset;
-cvar_t *g_machinegun_damage;
-cvar_t *g_hyperblaster_speed;
-cvar_t *g_railgun_damage;
+	cvar_t *g_chaingun_hspread;
+	cvar_t *g_chaingun_vspread;
+	cvar_t *g_chaingun_spread_offset;
+	cvar_t *g_machinegun_damage;
+	cvar_t *g_machinegun_hspread;
+	cvar_t *g_machinegun_vspread;
+	cvar_t *g_hyperblaster_speed;
+	cvar_t *g_railgun_damage;
+	cvar_t *g_rocketlauncher_damage;
+	cvar_t *g_rocketlauncher_speed;
 
 cvar_t *bot_name_prefix;
 
@@ -1131,8 +1135,12 @@ static void InitGame() {
 	g_chaingun_vspread = gi.cvar("g_chaingun_vspread", "0", CVAR_NOFLAGS);
 	g_chaingun_spread_offset = gi.cvar("g_chaingun_spread_offset", "0", CVAR_NOFLAGS);
 	g_machinegun_damage = gi.cvar("g_machinegun_damage", "0", CVAR_NOFLAGS);
+	g_machinegun_hspread = gi.cvar("g_machinegun_hspread", "0", CVAR_NOFLAGS);
+	g_machinegun_vspread = gi.cvar("g_machinegun_vspread", "0", CVAR_NOFLAGS);
 	g_hyperblaster_speed = gi.cvar("g_hyperblaster_speed", "0", CVAR_NOFLAGS);
 	g_railgun_damage = gi.cvar("g_railgun_damage", "0", CVAR_NOFLAGS);
+	g_rocketlauncher_damage = gi.cvar("g_rocketlauncher_damage", "0", CVAR_NOFLAGS);
+	g_rocketlauncher_speed = gi.cvar("g_rocketlauncher_speed", "0", CVAR_NOFLAGS);
 #else
 	// In release builds, set pointers to nullptr to prevent undefined references
 	g_weapon_balance_dev = nullptr;
@@ -1142,8 +1150,12 @@ static void InitGame() {
 	g_chaingun_vspread = nullptr;
 	g_chaingun_spread_offset = nullptr;
 	g_machinegun_damage = nullptr;
+	g_machinegun_hspread = nullptr;
+	g_machinegun_vspread = nullptr;
 	g_hyperblaster_speed = nullptr;
 	g_railgun_damage = nullptr;
+	g_rocketlauncher_damage = nullptr;
+	g_rocketlauncher_speed = nullptr;
 #endif
 
 	bot_name_prefix = gi.cvar("bot_name_prefix", "B|", CVAR_NOFLAGS);
@@ -2419,7 +2431,7 @@ static void CheckVote(void) {
 					char *token;
 					const char *mlist = g_map_list->string;
 					bool is_valid_map = false;
-					while (*(token = COM_Parse(&mlist))) {
+					while ((token = COM_Parse(&mlist)) && *token) {
 						if (!Q_strcasecmp(token, level.vote_state.arg.c_str())) {
 							is_valid_map = true;
 							break;
@@ -3024,7 +3036,7 @@ bool MQ_Add(gentity_t *ent, const char *mapname) {
 	if (g_map_pool->string[0]) {
 		const char *pool = g_map_pool->string;
 
-		while (*(token = COM_Parse(&pool))) {
+		while ((token = COM_Parse(&pool)) && *token) {
 			if (!Q_strcasecmp(token, mapname)) {
 				found = true;
 				break;
@@ -3036,7 +3048,7 @@ bool MQ_Add(gentity_t *ent, const char *mapname) {
 	if (!found && g_map_list->string[0]) {
 		const char *mlist = g_map_list->string;
 
-		while (*(token = COM_Parse(&mlist))) {
+		while ((token = COM_Parse(&mlist)) && *token) {
 			if (!Q_strcasecmp(token, mapname)) {
 				found = true;
 				break;

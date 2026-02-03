@@ -1355,32 +1355,91 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 	float splash_radius;
 	int	  speed;
 
-	switch (game.ruleset) {
-	case RS_MM:
-		damage = 100;
-		splash_radius = 120;
-		splash_damage = damage;
-		speed = 650;
-		break;
-	case RS_Q3A:
-		damage = 100;
-		splash_radius = 120;
-		splash_damage = 120;
-		speed = 900;
-		break;
-	case RS_Q1:
-		damage = irandom(100, 120);
-		splash_radius = 120;
-		splash_damage = 120;
-		speed = 1000;
-		break;
-	default:
-		damage = irandom(100, 120);
-		splash_radius = 120;
-		splash_damage = 120;
-		speed = (deathmatch->integer && RS(RS_VANILLA_PLUS)) ? 750 : 650;
-		break;
+	// Use dev cvar if enabled, otherwise use ruleset-based defaults
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_rocketlauncher_damage && g_rocketlauncher_damage->integer > 0) {
+		damage = g_rocketlauncher_damage->integer;
+		switch (game.ruleset) {
+		case RS_MM:
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = 650;
+			break;
+		case RS_QC:
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = 650;
+			break;
+		case RS_VANILLA_PLUS:
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = (deathmatch->integer ? 720 : 650);
+			break;
+		case RS_Q3A:
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 900;
+			break;
+		case RS_Q1:
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 1000;
+			break;
+		default:
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 650;
+			break;
+		}
+	} else {
+#else
+	{
+#endif
+		switch (game.ruleset) {
+		case RS_MM:
+			damage = 100;
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = 650;
+			break;
+		case RS_QC:
+			damage = 100;
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = 650;
+			break;
+		case RS_VANILLA_PLUS:
+			damage = 100;
+			splash_radius = 120;
+			splash_damage = damage;
+			speed = (deathmatch->integer ? 720 : 650);
+			break;
+		case RS_Q3A:
+			damage = 100;
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 900;
+			break;
+		case RS_Q1:
+			damage = irandom(100, 120);
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 1000;
+			break;
+		default:
+			damage = irandom(100, 120);
+			splash_radius = 120;
+			splash_damage = 120;
+			speed = 650;
+			break;
+		}
 	}
+	// Use dev cvar for rocket launcher speed if enabled, otherwise use ruleset-based defaults
+#ifdef _DEBUG
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_rocketlauncher_speed && g_rocketlauncher_speed->integer > 0) {
+		speed = g_rocketlauncher_speed->integer;
+	}
+#endif
 	if (g_frenzy->integer)
 		speed *= 1.5;
 
@@ -1822,6 +1881,8 @@ static void Weapon_HyperBlaster_Fire(gentity_t *ent) {
 			// Note: hyperblaster damage cvar would go here if we add it, but currently only speed is configurable
 			if (RS(RS_Q3A)) {
 				damage = deathmatch->integer ? 20 : 25;
+			} else if (RS(RS_QC)) {
+				damage = deathmatch->integer ? 13 : 17;
 			} else {
 				damage = deathmatch->integer ? 15 : 20;
 			}
@@ -1863,12 +1924,32 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 	int kick = 2;
 	int vs, hs;
 
-	// Use dev cvar if enabled, otherwise use ruleset-based defaults
+	// Use dev cvars if enabled, otherwise use ruleset-based defaults
 #ifdef _DEBUG
-	if (g_weapon_balance_dev && g_weapon_balance_dev->integer && g_machinegun_damage && g_machinegun_damage->integer > 0) {
-		damage = g_machinegun_damage->integer;
-		vs = DEFAULT_BULLET_VSPREAD;
-		hs = DEFAULT_BULLET_HSPREAD;
+	if (g_weapon_balance_dev && g_weapon_balance_dev->integer) {
+		if (g_machinegun_damage && g_machinegun_damage->integer > 0) {
+			damage = g_machinegun_damage->integer;
+		} else {
+			if (RS(RS_Q3A)) {
+				damage = GT(GT_TDM) ? 5 : 7;
+			} else if (RS(RS_QC)) {
+				damage = 5;
+			} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+				damage = 7;
+			} else {
+				damage = 8;
+			}
+		}
+		if (RS(RS_Q3A)) {
+			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : 200;
+			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : 200;
+		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
+			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : 255;
+			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : 425;
+		} else {
+			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : DEFAULT_BULLET_HSPREAD;
+			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : DEFAULT_BULLET_VSPREAD;
+		}
 	} else {
 #else
 	{
@@ -1877,10 +1958,14 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			damage = GT(GT_TDM) ? 5 : 7;
 			vs = 200;
 			hs = 200;
+		} else if (RS(RS_QC)) {
+			damage = 5;
+			vs = DEFAULT_BULLET_VSPREAD;
+			hs = DEFAULT_BULLET_HSPREAD;
 		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
 			damage = 7;
-			vs = 400;
-			hs = 240;
+			vs = 425;
+			hs = 255;
 		} else {
 			damage = 8;
 			vs = DEFAULT_BULLET_VSPREAD;
@@ -1967,7 +2052,9 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 #else
 	{
 #endif
-		if (deathmatch->integer && RS(RS_VANILLA_PLUS))
+		if (RS(RS_QC))
+			damage = deathmatch->integer ? 4 : 6;
+		else if (deathmatch->integer && RS(RS_VANILLA_PLUS))
 			damage = 5;
 		else
 			damage = deathmatch->integer ? 6 : 8;
@@ -2226,8 +2313,12 @@ static void Weapon_Railgun_Fire(gentity_t *ent) {
 #else
 	{
 #endif
-		// normal damage too extreme for DM
-		damage = deathmatch->integer ? 100 : 150;
+		if (RS(RS_QC)) {
+			damage = 80;
+		} else {
+			// normal damage too extreme for DM
+			damage = deathmatch->integer ? 100 : 150;
+		}
 	}
 	int kick = !!(RS(RS_MM)) ? (damage * 2) : (deathmatch->integer ? 200 : 225);
 
