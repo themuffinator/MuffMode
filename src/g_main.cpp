@@ -168,6 +168,7 @@ cvar_t *g_map_list_shuffle;
 cvar_t *g_map_list_shuffle_once;
 cvar_t *g_map_pool;
 cvar_t *g_votable_gametypes;
+cvar_t *g_votable_rulesets;
 cvar_t *g_match_lock;
 cvar_t *g_matchstats;
 cvar_t *g_maxvelocity;
@@ -1088,6 +1089,7 @@ static void InitGame() {
 	g_map_list_shuffle_once = gi.cvar("g_map_list_shuffle_once", "0", CVAR_NOFLAGS);
 	g_map_pool = gi.cvar("g_map_pool", "", CVAR_NOFLAGS);
 	g_votable_gametypes = gi.cvar("g_votable_gametypes", "", CVAR_NOFLAGS);
+	g_votable_rulesets = gi.cvar("g_votable_rulesets", "", CVAR_NOFLAGS);
 	g_match_lock = gi.cvar("g_match_lock", "0", CVAR_SERVERINFO);
 	g_matchstats = gi.cvar("g_matchstats", "0", CVAR_NOFLAGS);
 	g_motd_filename = gi.cvar("g_motd_filename", "motd.txt", CVAR_NOFLAGS);

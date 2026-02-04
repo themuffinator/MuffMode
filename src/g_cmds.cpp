@@ -2698,6 +2698,55 @@ static std::string GetVotableGametypesList() {
 	return result;
 }
 
+// Helper function to check if a ruleset is votable
+static bool IsRulesetVotable(ruleset_t rs) {
+	// If no votable list is set, allow all rulesets (backward compatible)
+	if (!g_votable_rulesets->string[0])
+		return true;
+
+	// Check if the ruleset's short name is in the votable list
+	const char *votable_list = g_votable_rulesets->string;
+	char *token;
+
+	while ((token = COM_Parse(&votable_list)) && *token) {
+		if (!Q_strcasecmp(token, rs_short_name[(int)rs]))
+			return true;
+	}
+
+	return false;
+}
+
+// Helper function to build list of votable rulesets for help text
+static std::string GetVotableRulesetsList() {
+	std::string result;
+
+	if (!g_votable_rulesets->string[0]) {
+		// If no restriction, show all implemented rulesets (skip RS_NONE)
+		for (int i = (int)RS_NONE + 1; i < (int)RS_NUM_RULESETS; i++) {
+			// Skip RS_NONE
+			if (i == RS_NONE)
+				continue;
+			if (!result.empty())
+				result += "|";
+			result += rs_short_name[i];
+		}
+	} else {
+		// Show only votable rulesets
+		const char *votable_list = g_votable_rulesets->string;
+		char *token;
+		bool first = true;
+
+		while ((token = COM_Parse(&votable_list)) && *token) {
+			if (!first)
+				result += "|";
+			result += token;
+			first = false;
+		}
+	}
+
+	return result;
+}
+
 static bool Vote_Val_Gametype(gentity_t *ent) {
 	// Ensure exactly 3 arguments: callvote, gametype, <gametype_name>
 	if (gi.argc() != 3) {
@@ -2744,11 +2793,25 @@ static void Vote_Pass_Ruleset() {
 static bool Vote_Val_Ruleset(gentity_t *ent) {
 	ruleset_t desired_rs = RS_IndexFromString(gi.argv(2));
 	if (desired_rs == ruleset_t::RS_NONE) {
-		gi.Client_Print(ent, PRINT_HIGH, "Invalid ruleset.\n");
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid ruleset: '{}'\n", gi.argv(2));
+		std::string votable_list = GetVotableRulesetsList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid rulesets are: {}\n", votable_list.c_str());
+		}
 		return false;
 	}
 	if ((int)desired_rs == game.ruleset) {
-		gi.Client_Print(ent, PRINT_HIGH, "Ruleset currently active.\n");
+		gi.LocClient_Print(ent, PRINT_HIGH, "Ruleset currently active.\n");
+		return false;
+	}
+
+	// Check if ruleset is votable
+	if (!IsRulesetVotable(desired_rs)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "This ruleset is not available for voting.\n");
+		std::string votable_list = GetVotableRulesetsList();
+		if (!votable_list.empty()) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Valid rulesets are: {}\n", votable_list.c_str());
+		}
 		return false;
 	}
 
@@ -3136,7 +3199,7 @@ vcmds_t vote_cmds[] = {
 	{"cointoss",			Vote_Val_None,			Vote_Pass_Cointoss,		256,	1,	"",									"invokes a HEADS or TAILS cointoss"},
 	{"random",				Vote_Val_Random,		Vote_Pass_Random,		512,	1,	"<2-100>",							"randomly selects a number from 2 to specified value"},
 	{"balance",				Vote_Val_BalanceTeams,	Vote_Pass_BalanceTeams,	1024,	1,	"",									"balance teams without shuffling"},
-	{"ruleset",				Vote_Val_Ruleset,		Vote_Pass_Ruleset,		2048,	2,	"<q2re|mm|q3a>",					"changes the current ruleset"},
+	{"ruleset",				Vote_Val_Ruleset,		Vote_Pass_Ruleset,		2048,	2,	"<q2re|mm|q3a|q2reb|qc>",					"changes the current ruleset"},
 	{"powerups",				Vote_Val_Powerups,		Vote_Pass_Powerups,		4096,	2,	"<0/1>",							"enables or disables powerups"},
 	{"friendlyfire",			Vote_Val_FriendlyFire,	Vote_Pass_FriendlyFire,	8192,	2,	"<0/1>",							"enables or disables friendly fire (team modes only)"},
 	{"handicap",				Vote_Val_Handicap,		Vote_Pass_Handicap,		16384,	4,	"<player> <weapon> <on|off>",		"restricts weapons for a player in duel mode"},
@@ -3952,7 +4015,7 @@ static void Cmd_Ruleset_f(gentity_t *ent) {
 		return;
 
 	if (gi.argc() < 2) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <q2re|mm|q3a|vp>\nChanges current ruleset. Current ruleset is {} ({}).\n", gi.argv(0), rs_long_name[(int)game.ruleset], (int)game.ruleset);
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <q2re|mm|q3a|q2reb|qc>\nChanges current ruleset. Current ruleset is {} ({}).\n", gi.argv(0), rs_long_name[(int)game.ruleset], (int)game.ruleset);
 		return;
 	}
 

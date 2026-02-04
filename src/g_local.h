@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.48";
+constexpr const char *GAMEMOD_VERSION = "0.21.51";
 
 //==================================================================
 
@@ -174,7 +174,7 @@ constexpr const char *rs_short_name[RS_NUM_RULESETS] = {
 	"q2re",
 	"mm",
 	"q3a",
-	"vp",
+	"q2reb",
 	"q",
 	"qc",
 };
@@ -183,9 +183,9 @@ constexpr const char *rs_long_name[RS_NUM_RULESETS] = {
 	"QUAKE II Rerelease",
 	"Muff Mode",
 	"QUAKE III Arena style",
-	"Vanilla Plus",
+	"Q2RE Balanced",
 	"QUAKE style",
-	"Quake Champions",
+	"Quake Champions style",
 };
 
 constexpr const char *stock_maps[] = {
@@ -2492,6 +2492,7 @@ extern cvar_t *g_map_list_shuffle;
 extern cvar_t *g_map_list_shuffle_once;
 extern cvar_t *g_map_pool;
 extern cvar_t *g_votable_gametypes;
+extern cvar_t *g_votable_rulesets;
 extern cvar_t *g_match_lock;
 extern cvar_t *g_matchstats;
 extern cvar_t *g_maxvelocity;

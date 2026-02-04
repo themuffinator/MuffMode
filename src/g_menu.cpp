@@ -422,6 +422,9 @@ void G_Menu_CallVote_Restart(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_GameType_Update(gentity_t *ent);
 void G_Menu_CallVote_GameType_Selection(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_Ruleset(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_Ruleset_Update(gentity_t *ent);
+void G_Menu_CallVote_Ruleset_Selection(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_TimeLimit_Update(gentity_t *ent);
 void G_Menu_CallVote_TimeLimit(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_TimeLimit_Selection(gentity_t *ent, menu_hnd_t *p);
@@ -503,6 +506,27 @@ const menu_t pmcallvotemenu_gametype[] = {
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
 	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_GameType_Selection },
+	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
+};
+
+const menu_t pmcallvotemenu_ruleset[] = {
+	{ "", MENU_ALIGN_CENTER, nullptr },
+	{ "", MENU_ALIGN_CENTER, nullptr },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
+	{ "", MENU_ALIGN_LEFT, G_Menu_CallVote_Ruleset_Selection },
 	{ "$g_pc_return", MENU_ALIGN_LEFT, G_Menu_ReturnToCallVote }
 };
 
@@ -804,6 +828,24 @@ static bool IsGametypeVotable_Menu(gametype_t gt) {
 	return false;
 }
 
+// Helper function to check if a ruleset is votable (for menu)
+static bool IsRulesetVotable_Menu(ruleset_t rs) {
+	// If no votable list is set, allow all rulesets (backward compatible)
+	if (!g_votable_rulesets->string[0])
+		return true;
+
+	// Check if the ruleset's short name is in the votable list
+	const char *votable_list = g_votable_rulesets->string;
+	char *token;
+
+	while ((token = COM_Parse(&votable_list)) && *token) {
+		if (!Q_strcasecmp(token, rs_short_name[(int)rs]))
+			return true;
+	}
+
+	return false;
+}
+
 void G_Menu_CallVote_GameType_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
 
@@ -923,6 +965,92 @@ void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p) {
 
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_gametype, -1, sizeof(pmcallvotemenu_gametype) / sizeof(menu_t), nullptr, G_Menu_CallVote_GameType_Update);
+}
+
+void G_Menu_CallVote_Ruleset_Update(gentity_t *ent) {
+	menu_t *entries = ent->client->menu->entries;
+
+	// Set the title
+	Q_strlcpy(entries[0].text, "Select Ruleset", sizeof(entries[0].text));
+
+	// Clear all entries first
+	for (int i = 2; i < 17; i++) {
+		entries[i].SelectFunc = nullptr;
+		entries[i].text[0] = '\0';
+		entries[i].text_arg1[0] = '\0';
+	}
+
+	// Build list of votable rulesets
+	int menu_index = 2;
+	for (int i = (int)RS_NONE + 1; i < (int)RS_NUM_RULESETS && menu_index < 17; i++) {
+		ruleset_t rs = (ruleset_t)i;
+		
+		// Skip RS_NONE
+		if (rs == RS_NONE)
+			continue;
+		
+		// Check if ruleset is votable
+		if (!IsRulesetVotable_Menu(rs))
+			continue;
+		
+		Q_strlcpy(entries[menu_index].text_arg1, rs_short_name[i], sizeof(entries[menu_index].text_arg1));
+		Q_strlcpy(entries[menu_index].text, rs_long_name[i], sizeof(entries[menu_index].text));
+		entries[menu_index].SelectFunc = G_Menu_CallVote_Ruleset_Selection;
+		menu_index++;
+	}
+}
+
+void G_Menu_CallVote_Ruleset_Selection(gentity_t *ent, menu_hnd_t *p) {
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
+		gi.Com_PrintFmt("{}: invalid ruleset selection index.\n", __FUNCTION__);
+		return;
+	}
+	UpdateFunc_t saved_update_func = p->UpdateFunc;
+	p->UpdateFunc = nullptr;
+	char ruleset_value[64];
+	int cur_index = p->cur;
+	if (cur_index < 0 || cur_index >= p->num) {
+		p->UpdateFunc = saved_update_func;
+		gi.Com_PrintFmt("{}: ruleset selection index became invalid.\n", __FUNCTION__);
+		return;
+	}
+	Q_strlcpy(ruleset_value, p->entries[cur_index].text_arg1, sizeof(ruleset_value));
+	p->UpdateFunc = saved_update_func;
+	if (!ruleset_value[0]) {
+		gi.Com_PrintFmt("{}: no ruleset selected.\n", __FUNCTION__);
+		return;
+	}
+	ruleset_t rs = RS_IndexFromString(ruleset_value);
+	if (rs == ruleset_t::RS_NONE) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid ruleset selected.\n");
+		return;
+	}
+	if ((int)rs == game.ruleset) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Ruleset is already active.\n");
+		return;
+	}
+	char ruleset_value_final[64];
+	Q_strlcpy(ruleset_value_final, ruleset_value, sizeof(ruleset_value_final));
+	P_Menu_Close(ent);
+	std::string ruleset_value_std = ruleset_value_final;
+	level.vote_state.command = FindVoteCmdByName("ruleset");
+	level.vote_state.arg.clear();
+	level.vote_state.arg.reserve(16);
+	level.vote_state.arg.assign(ruleset_value_std.c_str(), ruleset_value_std.length());
+	VoteCommandStore(ent);
+}
+
+void G_Menu_CallVote_Ruleset(gentity_t *ent, menu_hnd_t *p) {
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+	P_Menu_Close(ent);
+	P_Menu_Open(ent, pmcallvotemenu_ruleset, -1, sizeof(pmcallvotemenu_ruleset) / sizeof(menu_t), nullptr, G_Menu_CallVote_Ruleset_Update);
 }
 
 void G_Menu_CallVote_TimeLimit_Update(gentity_t *ent) {
@@ -1164,8 +1292,13 @@ static void G_Menu_CallVote_Update(gentity_t *ent) {
 	entries[gametype_index].SelectFunc = G_Menu_CallVote_GameType;
 	Q_strlcpy(entries[gametype_index].text, G_Fmt("Gametype: {}", level.gametype_name).data(), sizeof(entries[gametype_index].text));
 
-	// Map option - show current map name (second option)
-	int map_index = gametype_index + 1;
+	// Ruleset option - show current ruleset (second option)
+	int ruleset_index = gametype_index + 1;
+	entries[ruleset_index].SelectFunc = G_Menu_CallVote_Ruleset;
+	Q_strlcpy(entries[ruleset_index].text, G_Fmt("Ruleset: {}", rs_long_name[(int)game.ruleset]).data(), sizeof(entries[ruleset_index].text));
+
+	// Map option - show current map name (third option)
+	int map_index = ruleset_index + 1;
 	entries[map_index].SelectFunc = G_Menu_CallVote_Map;
 	if (level.mapname[0]) {
 		Q_strlcpy(entries[map_index].text, G_Fmt("Map:\t\t {}", level.mapname).data(), sizeof(entries[map_index].text));

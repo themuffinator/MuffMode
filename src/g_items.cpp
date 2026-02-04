@@ -2745,7 +2745,7 @@ TOUCH(Touch_Item) (gentity_t *ent, gentity_t *other, const trace_t &tr, bool oth
 		if (ent->noise_index)
 			gi.sound(other, CHAN_ITEM, ent->noise_index, 1, ATTN_NORM, 0);
 		else if (it->pickup_sound) {
-			// Broadcast powerup pickup sounds to all players in deathmatch (including TDM/CTF) with MM/Q3A/Vanilla Plus ruleset
+			// Broadcast powerup pickup sounds to all players in deathmatch (including TDM/CTF) with MM/Q3A/Q2RE Balanced ruleset
 			if (deathmatch->integer && (it->flags & IF_POWERUP) && (RS(RS_MM) || RS(RS_Q3A) || RS(RS_VANILLA_PLUS))) {
 				gi.sound(ent, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(it->pickup_sound), 1, ATTN_NONE, 0);
 			} else {

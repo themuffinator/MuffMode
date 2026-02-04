@@ -2219,7 +2219,7 @@ Only used for the world.
 "start_items"		give players these items on spawn
 "no_grapple"		disables grappling hook
 "no_dm_spawnpads"	disables spawn pads in deathmatch
-"ruleset"			overrides gameplay ruleset (q2re/mm/q3a)
+"ruleset"			overrides gameplay ruleset (q2re/mm/q3a/q2reb/qc)
 */
 void SP_worldspawn(gentity_t *ent) {
 	Q_strlcpy(level.gamemod_name, G_Fmt("{} v{}", GAMEMOD_TITLE, GAMEMOD_VERSION).data(), sizeof(level.gamemod_name));

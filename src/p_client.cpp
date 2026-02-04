@@ -1453,7 +1453,7 @@ void InitClientPersistant(gentity_t *ent, gclient_t *client) {
 					client->pers.inventory[IT_WEAPON_SHOTGUN] = 1;
 					client->pers.inventory[IT_AMMO_SHELLS] = 10;
 				} else if (RS(RS_QC)) {
-					// Quake Champions: random starting weapon (Shotgun, Machinegun, or Hyperblaster)
+					// Quake Champions style: random starting weapon (Shotgun, Machinegun, or Hyperblaster)
 					client->pers.max_ammo.fill(50);
 					client->pers.max_ammo[AMMO_BULLETS] = 200;
 					client->pers.max_ammo[AMMO_SHELLS] = 100;

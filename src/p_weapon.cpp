@@ -1882,7 +1882,7 @@ static void Weapon_HyperBlaster_Fire(gentity_t *ent) {
 			if (RS(RS_Q3A)) {
 				damage = deathmatch->integer ? 20 : 25;
 			} else if (RS(RS_QC)) {
-				damage = deathmatch->integer ? 13 : 17;
+				damage = 12;
 			} else {
 				damage = deathmatch->integer ? 15 : 20;
 			}
@@ -1933,7 +1933,7 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			if (RS(RS_Q3A)) {
 				damage = GT(GT_TDM) ? 5 : 7;
 			} else if (RS(RS_QC)) {
-				damage = 5;
+				damage = 6;
 			} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
 				damage = 7;
 			} else {
@@ -1959,7 +1959,7 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			vs = 200;
 			hs = 200;
 		} else if (RS(RS_QC)) {
-			damage = 5;
+			damage = 6;
 			vs = DEFAULT_BULLET_VSPREAD;
 			hs = DEFAULT_BULLET_HSPREAD;
 		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
