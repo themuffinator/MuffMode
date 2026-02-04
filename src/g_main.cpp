@@ -3757,6 +3757,7 @@ void BeginIntermission(gentity_t *targ) {
 		else
 			AnnouncerSound(ec, ec->client->resp.rank == 0 ? "you_win" : "you_lose", nullptr, false);
 	}
+
 }
 
 /*
@@ -3772,6 +3773,7 @@ void ExitLevel() {
 		MuffModeLog("MAP", "Exiting level '%s' (no next map specified)", level.mapname);
 	}
 	
+	// Take screenshot at match end (when exiting level)
 	if (deathmatch->integer && g_dm_intermission_shots->integer && level.num_playing_human_clients > 0) {
 		struct tm *ltime;
 		time_t gmtime;
@@ -3781,25 +3783,46 @@ void ExitLevel() {
 		time(&gmtime);
 		ltime = localtime(&gmtime);
 
+		// Helper lambda to sanitize player names for filenames (replace spaces and invalid chars)
+		auto sanitize_name = [](const char *name) -> std::string {
+			std::string result;
+			for (const char *p = name; *p; p++) {
+				char c = *p;
+				// Replace spaces with underscores, remove other invalid filename chars
+				if (c == ' ') {
+					result += '_';
+				} else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || 
+				           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+					result += c;
+				}
+				// Skip other characters
+			}
+			return result.empty() ? "player" : result;
+		};
+
 		const char *s = "";
 
 		if (GT(GT_DUEL) && level.num_playing_clients >= 2) {
 			gentity_t *e1 = &g_entities[level.sorted_clients[0] + 1];
 			gentity_t *e2 = &g_entities[level.sorted_clients[1] + 1];
-			const char *n1 = e1 ? e1->client->resp.netname : "";
-			const char *n2 = e2 ? e2->client->resp.netname : "";
+			std::string n1 = sanitize_name(e1 ? e1->client->resp.netname : "");
+			std::string n2 = sanitize_name(e2 ? e2->client->resp.netname : "");
 
-			s = G_Fmt("screenshot {}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n",
-				n1, n2, level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
-			gi.Com_Print(s);
+			const char *filename = G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
+				n1.c_str(), n2.c_str(), level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
+			s = G_Fmt("screenshot {}\n", filename).data();
+			gi.Com_PrintFmt("Screenshot saved: {}\n", filename);
 		} else {
 			gentity_t *ent = &g_entities[1];
-			const char *name = (ent->client->follow_target && ent->client->follow_target->client) 
+			const char *raw_name = (ent->client->follow_target && ent->client->follow_target->client) 
 				? ent->client->follow_target->client->resp.netname 
 				: ent->client->resp.netname;
+			std::string name = sanitize_name(raw_name);
 
-			s = G_Fmt("screenshot {}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}\n", gt_short_name_upper[g_gametype->integer],
-				name, level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
+			const char *filename = G_Fmt("{}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}", gt_short_name_upper[g_gametype->integer],
+				name.c_str(), level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
+			s = G_Fmt("screenshot {}\n", filename).data();
+			gi.Com_PrintFmt("Screenshot saved: {}\n", filename);
 		}
 		gi.AddCommandString(s);
 	}
