@@ -3447,10 +3447,18 @@ void VoteCommandStore(gentity_t *ent) {
 	           level.vote_state.caller->resp.netname,
 	           level.vote_state.num_eligible);
 	
-	// Format vote argument safely - must store in variable to avoid dangling pointer
-	// when LocBroadcast_Print sends to multiple clients
-	std::string vote_arg_display = level.vote_state.arg.empty() ? "" : " " + level.vote_state.arg;
-	gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}{}\n", level.vote_state.caller->resp.netname, level.vote_state.command->name, vote_arg_display.c_str());
+	// Broadcast vote message - avoid temporary strings to prevent dangling pointer bugs
+	// Pass level.vote_state.arg directly since it persists for the vote duration
+	if (level.vote_state.arg.empty()) {
+		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}\n", 
+		                      level.vote_state.caller->resp.netname, 
+		                      level.vote_state.command->name);
+	} else {
+		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{} {}\n", 
+		                      level.vote_state.caller->resp.netname, 
+		                      level.vote_state.command->name, 
+		                      level.vote_state.arg.c_str());
+	}
 
 	for (auto ec : active_clients())
 		ec->client->pers.voted = ec == ent ? 1 : 0;
