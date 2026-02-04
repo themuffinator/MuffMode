@@ -1581,7 +1581,7 @@ static void ParseWorldEntityString(const char *mapname, bool try_q3) {
 			ent_valid = false;
 		}
 		if (ent_valid) {
-			buffer = (char *)gi.TagMalloc(length + 1, '\0');
+			buffer = (char *)gi.TagMalloc(length + 1, TAG_LEVEL);
 			if (length) {
 				read_length = fread(buffer, 1, length, f);
 
@@ -1725,7 +1725,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 			ent_valid = false;
 		}
 		if (ent_valid) {
-			buffer = (char *)gi.TagMalloc(length + 1, '\0');
+			buffer = (char *)gi.TagMalloc(length + 1, TAG_LEVEL);
 			if (length) {
 				read_length = fread(buffer, 1, length, f);
 
