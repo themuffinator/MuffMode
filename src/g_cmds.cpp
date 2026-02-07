@@ -3497,10 +3497,22 @@ void VoteCommandStore(gentity_t *ent) {
 	// Calculate eligible voters
 	level.vote_state.num_eligible = 0;
 	for (auto ec : active_clients()) {
-		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+		bool is_playing = ClientIsPlaying(ec->client);
+		bool is_bot = ec->client->sess.is_a_bot;
+		bool spec_vote_allowed = g_allow_spec_vote->integer != 0;
+		
+		MuffModeLog("VOTE", "Checking client '%s': is_playing=%d, is_bot=%d, team=%d, spec_vote_allowed=%d",
+		           ec->client->resp.netname, is_playing, is_bot, ec->client->sess.team, spec_vote_allowed);
+		
+		if (!is_playing && !spec_vote_allowed) {
+			MuffModeLog("VOTE", "  -> Excluded: spectator and spec voting disabled");
 			continue;
-		if (ec->client->sess.is_a_bot)
+		}
+		if (is_bot) {
+			MuffModeLog("VOTE", "  -> Excluded: is a bot");
 			continue;
+		}
+		MuffModeLog("VOTE", "  -> Included as eligible voter");
 		level.vote_state.num_eligible++;
 	}
 	

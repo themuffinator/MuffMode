@@ -2347,19 +2347,37 @@ static void UpdateActiveVote() {
 	// Validate vote counts don't exceed voting clients (safety check)
 	int total_votes = level.vote_state.yes_votes + level.vote_state.no_votes;
 	if (total_votes > level.vote_state.num_eligible) {
+		MuffModeLog("VOTE", "Safety check triggered: total_votes=%d > num_eligible=%d, recalculating...",
+		           total_votes, level.vote_state.num_eligible);
+		
 		// Recalculate votes from actual client states
 		level.vote_state.yes_votes = 0;
 		level.vote_state.no_votes = 0;
 		for (auto ec : active_clients()) {
-			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+			bool is_playing = ClientIsPlaying(ec->client);
+			bool is_bot = ec->client->sess.is_a_bot;
+			int voted = ec->client->pers.voted;
+			
+			if (!is_playing && !g_allow_spec_vote->integer) {
+				MuffModeLog("VOTE", "  Client '%s' excluded from recount: spectator (team=%d)",
+				           ec->client->resp.netname, ec->client->sess.team);
 				continue;
-			if (ec->client->sess.is_a_bot)
+			}
+			if (is_bot) {
+				MuffModeLog("VOTE", "  Client '%s' excluded from recount: bot", ec->client->resp.netname);
 				continue;
-			if (ec->client->pers.voted == 1)
+			}
+			if (voted == 1) {
 				level.vote_state.yes_votes++;
-			else if (ec->client->pers.voted == -1)
+				MuffModeLog("VOTE", "  Client '%s' counted: voted YES", ec->client->resp.netname);
+			} else if (voted == -1) {
 				level.vote_state.no_votes++;
+				MuffModeLog("VOTE", "  Client '%s' counted: voted NO", ec->client->resp.netname);
+			} else {
+				MuffModeLog("VOTE", "  Client '%s': no vote recorded (voted=%d)", ec->client->resp.netname, voted);
+			}
 		}
+		MuffModeLog("VOTE", "After recount: yes=%d, no=%d", level.vote_state.yes_votes, level.vote_state.no_votes);
 	}
 
 	// Check timeout
