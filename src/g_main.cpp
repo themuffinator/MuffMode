@@ -661,6 +661,13 @@ static void InitGametype() {
 	}
 }
 
+// Gametype tracking variables (used by both ChangeGametype and GT_Changes)
+static int gt_teamplay = 0;
+static int gt_ctf = 0;
+static int gt_g_gametype = 0;
+static bool gt_teams_on = false;
+static gametype_t gt_check = GT_NONE;
+
 void ChangeGametype(gametype_t gt) {
 	switch (gt) {
 	case gametype_t::GT_CTF:
@@ -729,14 +736,14 @@ void ChangeGametype(gametype_t gt) {
 		if (g_gametype_cfg->integer && deathmatch->integer) {
 			gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[(int)gt]).data());
 		}
+		
+		// Update tracking vars to prevent GT_Changes() from triggering a redundant reload
+		// when Vote_Pass_Gametype() has already handled the map change properly
+		gt_g_gametype = g_gametype->modified_count;
+		gt_check = (gametype_t)g_gametype->integer;
 	}
 }
 
-int gt_teamplay = 0;
-int gt_ctf = 0;
-int gt_g_gametype = 0;
-bool gt_teams_on = false;
-gametype_t gt_check = GT_NONE;
 void GT_Changes() {
 	if (!deathmatch->integer)
 		return;
@@ -2340,47 +2347,9 @@ CheckVote
 ==================
 */
 static void UpdateActiveVote() {
-	// Give it a minimum duration
 	if (level.time - level.vote_state.start_time < 1_sec)
 		return;
 
-	// Validate vote counts don't exceed voting clients (safety check)
-	int total_votes = level.vote_state.yes_votes + level.vote_state.no_votes;
-	if (total_votes > level.vote_state.num_eligible) {
-		MuffModeLog("VOTE", "Safety check triggered: total_votes=%d > num_eligible=%d, recalculating...",
-		           total_votes, level.vote_state.num_eligible);
-		
-		// Recalculate votes from actual client states
-		level.vote_state.yes_votes = 0;
-		level.vote_state.no_votes = 0;
-		for (auto ec : active_clients()) {
-			bool is_playing = ClientIsPlaying(ec->client);
-			bool is_bot = ec->client->sess.is_a_bot;
-			int voted = ec->client->pers.voted;
-			
-			if (!is_playing && !g_allow_spec_vote->integer) {
-				MuffModeLog("VOTE", "  Client '%s' excluded from recount: spectator (team=%d)",
-				           ec->client->resp.netname, ec->client->sess.team);
-				continue;
-			}
-			if (is_bot) {
-				MuffModeLog("VOTE", "  Client '%s' excluded from recount: bot", ec->client->resp.netname);
-				continue;
-			}
-			if (voted == 1) {
-				level.vote_state.yes_votes++;
-				MuffModeLog("VOTE", "  Client '%s' counted: voted YES", ec->client->resp.netname);
-			} else if (voted == -1) {
-				level.vote_state.no_votes++;
-				MuffModeLog("VOTE", "  Client '%s' counted: voted NO", ec->client->resp.netname);
-			} else {
-				MuffModeLog("VOTE", "  Client '%s': no vote recorded (voted=%d)", ec->client->resp.netname, voted);
-			}
-		}
-		MuffModeLog("VOTE", "After recount: yes=%d, no=%d", level.vote_state.yes_votes, level.vote_state.no_votes);
-	}
-
-	// Check timeout
 	if (level.time - level.vote_state.start_time >= 30_sec) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote timed out.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
@@ -2388,32 +2357,17 @@ static void UpdateActiveVote() {
 		return;
 	}
 
-	// Check majority
+	// Vote counts are maintained by CalculateRanks(); just check majority here
 	int halfpoint = level.vote_state.num_eligible / 2;
-	
-	// Only log vote count when it changes (prevents spam at high framerates)
-	static int last_yes_votes = -1;
-	static int last_no_votes = -1;
-	if (level.vote_state.yes_votes != last_yes_votes || level.vote_state.no_votes != last_no_votes) {
-		MuffModeLog("VOTE", "Vote count: yes=%d, no=%d, eligible=%d, halfpoint=%d", 
-		           level.vote_state.yes_votes, level.vote_state.no_votes, 
-		           level.vote_state.num_eligible, halfpoint);
-		last_yes_votes = level.vote_state.yes_votes;
-		last_no_votes = level.vote_state.no_votes;
-	}
-	
+
 	if (level.vote_state.yes_votes > halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
 		AnnouncerSound(world, "vote_passed", nullptr, false);
 		TransitionVoteState(VoteState::PASSED);
-		// Reset static vars when vote completes
-		last_yes_votes = last_no_votes = -1;
 	} else if (level.vote_state.no_votes >= halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote failed.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
 		TransitionVoteState(VoteState::FAILED);
-		// Reset static vars when vote completes
-		last_yes_votes = last_no_votes = -1;
 	}
 }
 
@@ -2423,13 +2377,11 @@ static void CheckVote(void) {
 
 	switch (level.vote_state.state) {
 		case VoteState::IDLE:
-			// Nothing to do
 			return;
 
 		case VoteState::ACTIVE:
-			// Validate state
 			if (!level.vote_state.command || !level.vote_state.caller) {
-				gi.LocBroadcast_Print(PRINT_HIGH, "Vote state invalid, cancelling vote.\n");
+				gi.LocBroadcast_Print(PRINT_HIGH, "Vote cancelled: invalid state.\n");
 				TransitionVoteState(VoteState::FAILED);
 				return;
 			}
@@ -2437,45 +2389,16 @@ static void CheckVote(void) {
 			break;
 
 		case VoteState::PASSED:
-			// Wait for execution time
-			if (level.time >= level.vote_state.execute_time) {
+			if (level.time >= level.vote_state.execute_time)
 				TransitionVoteState(VoteState::EXECUTING);
-			}
 			break;
 
 		case VoteState::EXECUTING:
-			// Execute the vote command
-			if (!level.vote_state.command) {
-				// Command was lost - try minimal recovery for map votes only
-				if (!level.vote_state.arg.empty() && g_map_list->string[0]) {
-					char *token;
-					const char *mlist = g_map_list->string;
-					bool is_valid_map = false;
-					while ((token = COM_Parse(&mlist)) && *token) {
-						if (!Q_strcasecmp(token, level.vote_state.arg.c_str())) {
-							is_valid_map = true;
-							break;
-						}
-					}
-					if (is_valid_map && level.vote_state.arg.length() < sizeof(level.nextmap)) {
-						gi.Com_PrintFmt("Vote command lost but recovering map change to: {}\n", level.vote_state.arg);
-						Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
-						level.changemap = level.nextmap;
-						TransitionVoteState(VoteState::COMPLETE);
-						ExitLevel();
-						return;
-					}
-				}
-				gi.LocBroadcast_Print(PRINT_HIGH, "Vote execution failed: command was lost.\n");
-				TransitionVoteState(VoteState::FAILED);
-				return;
-			}
 			Vote_Passed();
 			break;
 
 		case VoteState::FAILED:
 		case VoteState::COMPLETE:
-			// Auto-transition to IDLE (handled by TransitionVoteState)
 			TransitionVoteState(VoteState::IDLE);
 			break;
 	}

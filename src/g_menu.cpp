@@ -636,88 +636,43 @@ inline std::vector<std::string> str_split(const std::string_view &str, char by) 
 	return out;
 }
 
-void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
-	vcmds_t *cc = FindVoteCmdByName("map");
-	if (!cc) {
-		gi.Com_PrintFmt("{}: missing map vote command.\n", __FUNCTION__);
-		return;
-	}
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid map selection index.\n", __FUNCTION__);
-		return;
-	}
+// Shared helper: safely read text_arg1 from a menu selection.
+// Disables UpdateFunc during the read to prevent corruption, then closes the menu.
+// Returns true and fills 'out' if successful, false otherwise.
+static bool MenuVote_ReadSelection(gentity_t *ent, menu_hnd_t *p, char *out, size_t out_size) {
+	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num)
+		return false;
 
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	// while we read the selection. Store it so we can restore if needed.
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
+	UpdateFunc_t saved = p->UpdateFunc;
 	p->UpdateFunc = nullptr;
+	Q_strlcpy(out, p->entries[p->cur].text_arg1, out_size);
+	p->UpdateFunc = saved;
 
-	int cur_index = p->cur;
-	
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;  // Restore before returning
-		gi.Com_PrintFmt("{}: map selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-	
-	// Read the original map name from text_arg1 (stored when menu was populated)
-	// This avoids any case-insensitive lookup issues
-	char original_map_name[64];
-	Q_strlcpy(original_map_name, p->entries[cur_index].text_arg1, sizeof(original_map_name));
-	
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-	
-	if (!original_map_name[0]) {
-		gi.Com_PrintFmt("{}: no map selected.\n", __FUNCTION__);
-		return;
-	}
+	if (!out[0])
+		return false;
 
-	// Validate the map name is reasonable (not corrupted) - check C string first
-	size_t map_name_len = strlen(original_map_name);
-	if (map_name_len == 0 || map_name_len > 64) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid map name selected.\n");
-		return;
-	}
-	
-	// Check for path traversal attempts (defense-in-depth)
-	if (strstr(original_map_name, "..") != nullptr) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
-		return;
-	}
-	
-	// Check for invalid characters in C string (allow / and \ for subfolder maps like q64/dm1)
-	if (strpbrk(original_map_name, ":?*\"<>|") != nullptr) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
-		return;
-	}
-	
-	// Make a second C string copy for extra safety before closing menu
-	char map_name_final[64];
-	Q_strlcpy(map_name_final, original_map_name, sizeof(map_name_final));
-	
-	// Close menu FIRST to prevent any menu operations from interfering
 	P_Menu_Close(ent);
-	
-	// Convert to std::string AFTER menu is closed - this should be safe
-	std::string map_name_std;
-	map_name_std.reserve(64);
-	map_name_std.assign(map_name_final, strlen(map_name_final));
-	
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	return true;
+}
+
+// Shared helper: set vote command + arg and call VoteCommandStore.
+static void MenuVote_Initiate(gentity_t *ent, const char *cmd_name, const char *arg) {
+	level.vote_state.command = FindVoteCmdByName(cmd_name);
+	level.vote_state.arg = arg ? arg : "";
+	VoteCommandStore(ent);
+}
+
+void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
+		return;
+
+	if (strstr(value, "..") || strpbrk(value, ":?*\"<>|")) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid characters in map name.\n");
 		return;
 	}
-	
-	// Now set vote data - use explicit assignment
-	level.vote_state.command = cc;
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(64);
-	level.vote_state.arg.assign(map_name_std.c_str(), map_name_std.length());
 
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "map", value);
 }
 
 static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
@@ -798,52 +753,12 @@ void G_Menu_CallVote_Map(gentity_t *ent, menu_hnd_t *p) {
 
 void G_Menu_CallVote_NextMap(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote_state.command = FindVoteCmdByName("nextmap");
-	level.vote_state.arg.clear();
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "nextmap", nullptr);
 }
 
 void G_Menu_CallVote_Restart(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote_state.command = FindVoteCmdByName("restart");
-	level.vote_state.arg.clear();
-	VoteCommandStore(ent);
-}
-
-// Helper function to check if a gametype is votable (mirrors logic from g_cmds.cpp)
-static bool IsGametypeVotable_Menu(gametype_t gt) {
-	// If no votable list is set, allow all gametypes (backward compatible)
-	if (!g_votable_gametypes->string[0])
-		return true;
-
-	// Check if the gametype's short name is in the votable list
-	const char *votable_list = g_votable_gametypes->string;
-	char *token;
-
-	while ((token = COM_Parse(&votable_list)) && *token) {
-		if (!Q_strcasecmp(token, gt_short_name[(int)gt]))
-			return true;
-	}
-
-	return false;
-}
-
-// Helper function to check if a ruleset is votable (for menu)
-static bool IsRulesetVotable_Menu(ruleset_t rs) {
-	// If no votable list is set, allow all rulesets (backward compatible)
-	if (!g_votable_rulesets->string[0])
-		return true;
-
-	// Check if the ruleset's short name is in the votable list
-	const char *votable_list = g_votable_rulesets->string;
-	char *token;
-
-	while ((token = COM_Parse(&votable_list)) && *token) {
-		if (!Q_strcasecmp(token, rs_short_name[(int)rs]))
-			return true;
-	}
-
-	return false;
+	MenuVote_Initiate(ent, "restart", nullptr);
 }
 
 void G_Menu_CallVote_GameType_Update(gentity_t *ent) {
@@ -869,7 +784,7 @@ void G_Menu_CallVote_GameType_Update(gentity_t *ent) {
 			continue;
 
 		// Check if gametype is votable
-		if (!IsGametypeVotable_Menu(gt))
+		if (!IsGametypeVotable(gt))
 			continue;
 
 		// Store short name in text_arg1 for the vote command
@@ -884,85 +799,24 @@ void G_Menu_CallVote_GameType_Update(gentity_t *ent) {
 }
 
 void G_Menu_CallVote_GameType_Selection(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
 
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid gametype selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	// while we read the selection. Store it so we can restore if needed.
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-
-	// Read the selected value IMMEDIATELY - copy to local stack buffer first for safety
-	char gametype_value[64];
-	int cur_index = p->cur;
-
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;  // Restore before returning
-		gi.Com_PrintFmt("{}: gametype selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-
-	// Copy the stored raw value (text_arg1) immediately to local buffer
-	// to prevent any corruption and to avoid depending on display text.
-	Q_strlcpy(gametype_value, p->entries[cur_index].text_arg1, sizeof(gametype_value));
-
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-
-	if (!gametype_value[0]) {
-		gi.Com_PrintFmt("{}: no gametype selected.\n", __FUNCTION__);
-		return;
-	}
-
-	// Validate the gametype
-	gametype_t gt = GT_IndexFromString(gametype_value);
+	gametype_t gt = GT_IndexFromString(value);
 	if (gt == GT_NONE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid gametype selected.\n");
 		return;
 	}
-
-	// Check if gametype is votable
-	if (!IsGametypeVotable_Menu(gt)) {
+	if (!IsGametypeVotable(gt)) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "This gametype is not available for voting.\n");
 		return;
 	}
 
-	// Make a second C string copy for extra safety before closing menu
-	char gametype_value_final[64];
-	Q_strlcpy(gametype_value_final, gametype_value, sizeof(gametype_value_final));
-
-	// Close menu FIRST to prevent any menu operations from interfering
-	P_Menu_Close(ent);
-
-	// Convert to std::string AFTER menu is closed - this should be safe
-	std::string gametype_value_std = gametype_value_final;
-
-	// Set vote data – mirror the map vote logic so the backing storage and
-	// lifetime are identical and cannot be clobbered on first use.
-	level.vote_state.command = FindVoteCmdByName("gametype");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(16);
-	level.vote_state.arg.assign(gametype_value_std.c_str(), gametype_value_std.length());
-
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "gametype", value);
 }
 
 void G_Menu_CallVote_GameType(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
-		return;
-	}
-
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_gametype, -1, sizeof(pmcallvotemenu_gametype) / sizeof(menu_t), nullptr, G_Menu_CallVote_GameType_Update);
 }
@@ -990,7 +844,7 @@ void G_Menu_CallVote_Ruleset_Update(gentity_t *ent) {
 			continue;
 		
 		// Check if ruleset is votable
-		if (!IsRulesetVotable_Menu(rs))
+		if (!IsRulesetVotable(rs))
 			continue;
 		
 		Q_strlcpy(entries[menu_index].text_arg1, rs_short_name[i], sizeof(entries[menu_index].text_arg1));
@@ -1001,30 +855,11 @@ void G_Menu_CallVote_Ruleset_Update(gentity_t *ent) {
 }
 
 void G_Menu_CallVote_Ruleset_Selection(gentity_t *ent, menu_hnd_t *p) {
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid ruleset selection index.\n", __FUNCTION__);
-		return;
-	}
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-	char ruleset_value[64];
-	int cur_index = p->cur;
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;
-		gi.Com_PrintFmt("{}: ruleset selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-	Q_strlcpy(ruleset_value, p->entries[cur_index].text_arg1, sizeof(ruleset_value));
-	p->UpdateFunc = saved_update_func;
-	if (!ruleset_value[0]) {
-		gi.Com_PrintFmt("{}: no ruleset selected.\n", __FUNCTION__);
-		return;
-	}
-	ruleset_t rs = RS_IndexFromString(ruleset_value);
+
+	ruleset_t rs = RS_IndexFromString(value);
 	if (rs == ruleset_t::RS_NONE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid ruleset selected.\n");
 		return;
@@ -1033,22 +868,11 @@ void G_Menu_CallVote_Ruleset_Selection(gentity_t *ent, menu_hnd_t *p) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Ruleset is already active.\n");
 		return;
 	}
-	char ruleset_value_final[64];
-	Q_strlcpy(ruleset_value_final, ruleset_value, sizeof(ruleset_value_final));
-	P_Menu_Close(ent);
-	std::string ruleset_value_std = ruleset_value_final;
-	level.vote_state.command = FindVoteCmdByName("ruleset");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(16);
-	level.vote_state.arg.assign(ruleset_value_std.c_str(), ruleset_value_std.length());
-	VoteCommandStore(ent);
+
+	MenuVote_Initiate(ent, "ruleset", value);
 }
 
 void G_Menu_CallVote_Ruleset(gentity_t *ent, menu_hnd_t *p) {
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
-		return;
-	}
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_ruleset, -1, sizeof(pmcallvotemenu_ruleset) / sizeof(menu_t), nullptr, G_Menu_CallVote_Ruleset_Update);
 }
@@ -1074,75 +898,13 @@ void G_Menu_CallVote_TimeLimit_Update(gentity_t *ent) {
 }
 
 void G_Menu_CallVote_TimeLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
-
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid time limit selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	// while we read the selection. Store it so we can restore if needed.
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-
-	// Read the selected value IMMEDIATELY - copy to local stack buffer first for safety
-	char time_value[64];
-	int cur_index = p->cur;
-
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;  // Restore before returning
-		gi.Com_PrintFmt("{}: time limit selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-
-	// Copy the stored raw value (text_arg1) immediately to local buffer
-	// to prevent any corruption and to avoid depending on display text.
-	Q_strlcpy(time_value, p->entries[cur_index].text_arg1, sizeof(time_value));
-
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-
-	if (!time_value[0]) {
-		gi.Com_PrintFmt("{}: no time limit selected.\n", __FUNCTION__);
-		return;
-	}
-
-	// Validate the value is a number (minutes, 0 allowed)
-	int value = strtoul(time_value, nullptr, 10);
-	if (value < 0) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid time limit value.\n");
-		return;
-	}
-
-	// Make a second C string copy for extra safety before closing menu
-	char time_value_final[64];
-	Q_strlcpy(time_value_final, time_value, sizeof(time_value_final));
-
-	// Close menu FIRST to prevent any menu operations from interfering
-	P_Menu_Close(ent);
-
-	// Convert to std::string AFTER menu is closed - this should be safe
-	std::string time_value_std = time_value_final;
-
-	// Set vote data – mirror the scorelimit/map vote logic for consistency
-	level.vote_state.command = FindVoteCmdByName("timelimit");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(16);
-	level.vote_state.arg.assign(time_value_std.c_str(), time_value_std.length());
-
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "timelimit", value);
 }
 
 void G_Menu_CallVote_TimeLimit(gentity_t *ent, menu_hnd_t *p) {
-	//level.vote = FindVoteCmdByName("timelimit");
-	//level.vote_arg.clear();
-	//VoteCommandStore(ent);
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_timelimit, -1, sizeof(pmcallvotemenu_timelimit) / sizeof(menu_t), nullptr, G_Menu_CallVote_TimeLimit_Update);
 }
@@ -1169,110 +931,36 @@ void G_Menu_CallVote_ScoreLimit_Update(gentity_t *ent) {
 }
 
 void G_Menu_CallVote_ScoreLimit_Selection(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
-	
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid score limit selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	// while we read the selection. Store it so we can restore if needed.
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-
-	// Read the selected value IMMEDIATELY - copy to local stack buffer first for safety
-	char limit_value[64];
-	int cur_index = p->cur;
-	
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;  // Restore before returning
-		gi.Com_PrintFmt("{}: score limit selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-	
-	// Copy the stored raw value (text_arg1) immediately to local buffer
-	// to prevent any corruption and to avoid depending on display text.
-	Q_strlcpy(limit_value, p->entries[cur_index].text_arg1, sizeof(limit_value));
-	
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-	
-	if (!limit_value[0]) {
-		gi.Com_PrintFmt("{}: no score limit selected.\n", __FUNCTION__);
-		return;
-	}
-
-	// Validate the value is a number
-	int value = strtoul(limit_value, nullptr, 10);
-	if (value < 0) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid score limit value.\n");
-		return;
-	}
-
-	// Make a second C string copy for extra safety before closing menu
-	char limit_value_final[64];
-	Q_strlcpy(limit_value_final, limit_value, sizeof(limit_value_final));
-	
-	// Close menu FIRST to prevent any menu operations from interfering
-	P_Menu_Close(ent);
-	
-	// Convert to std::string AFTER menu is closed - this should be safe
-	std::string limit_value_std = limit_value_final;
-	
-	// Set vote data – mirror the map vote logic so the backing storage and
-	// lifetime are identical and cannot be clobbered on first use.
-	level.vote_state.command = FindVoteCmdByName("scorelimit");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(16);
-	level.vote_state.arg.assign(limit_value_std.c_str(), limit_value_std.length());
-
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "scorelimit", value);
 }
 
 void G_Menu_CallVote_ScoreLimit(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
-		return;
-	}
-	
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_scorelimit, -1, sizeof(pmcallvotemenu_scorelimit) / sizeof(menu_t), nullptr, G_Menu_CallVote_ScoreLimit_Update);
 }
 
 void G_Menu_CallVote_ShuffleTeams(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote_state.command = FindVoteCmdByName("shuffle");
-	level.vote_state.arg.clear();
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "shuffle", nullptr);
 }
 
 void G_Menu_CallVote_BalanceTeams(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote_state.command = FindVoteCmdByName("balance");
-	level.vote_state.arg.clear();
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "balance", nullptr);
 }
 
 void G_Menu_CallVote_Unlagged(gentity_t *ent, menu_hnd_t *p) {
-
 }
 
 void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	level.vote_state.command = FindVoteCmdByName("cointoss");
-	level.vote_state.arg.clear();
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "cointoss", nullptr);
 }
 
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p) {
-
 }
 
 static void G_Menu_CallVote_Update(gentity_t *ent) {
@@ -1376,180 +1064,50 @@ void G_Menu_CallVote_Powerups_Update(gentity_t *ent) {
 }
 
 void G_Menu_CallVote_Powerups_Selection(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
 
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid powerups selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-
-	char powerup_value[64];
-	int cur_index = p->cur;
-
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;
-		gi.Com_PrintFmt("{}: powerups selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-
-	// Copy the stored raw value (text_arg1) immediately to local buffer
-	Q_strlcpy(powerup_value, p->entries[cur_index].text_arg1, sizeof(powerup_value));
-
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-
-	if (!powerup_value[0]) {
-		gi.Com_PrintFmt("{}: no powerup state selected.\n", __FUNCTION__);
-		return;
-	}
-
-	// Validate the value
-	int value = strtoul(powerup_value, nullptr, 10);
-	if (value != 0 && value != 1) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid powerup state value.\n");
-		return;
-	}
-
-	// Check if this would actually change the state
+	int v = strtoul(value, nullptr, 10);
 	bool currently_enabled = g_no_powerups->integer == 0;
-	bool will_be_enabled = (value == 1);
-	if (currently_enabled == will_be_enabled) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Powerups are already {}.\n", will_be_enabled ? "ENABLED" : "DISABLED");
+	if (currently_enabled == (v == 1)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Powerups are already {}.\n", v ? "ENABLED" : "DISABLED");
 		return;
 	}
 
-	// Make a second C string copy for extra safety before closing menu
-	char powerup_value_final[64];
-	Q_strlcpy(powerup_value_final, powerup_value, sizeof(powerup_value_final));
-
-	// Close menu FIRST to prevent any menu operations from interfering
-	P_Menu_Close(ent);
-
-	// Convert to std::string AFTER menu is closed
-	std::string powerup_value_std = powerup_value_final;
-
-	// Set vote data
-	level.vote_state.command = FindVoteCmdByName("powerups");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(2);
-	level.vote_state.arg.assign(powerup_value_std.c_str(), powerup_value_std.length());
-
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "powerups", value);
 }
 
 void G_Menu_CallVote_Powerups(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
-		return;
-	}
-
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_powerups, -1, sizeof(pmcallvotemenu_powerups) / sizeof(menu_t), nullptr, G_Menu_CallVote_Powerups_Update);
 }
 
 void G_Menu_CallVote_FriendlyFire_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
-
-	// Set the title
 	Q_strlcpy(entries[0].text, "Friendly Fire", sizeof(entries[0].text));
-
-	// Populate ON/OFF options and store the value in text_arg1
-	// Index 2 = "ON", Index 3 = "OFF"
 	Q_strlcpy(entries[2].text, "ON", sizeof(entries[2].text));
-	Q_strlcpy(entries[2].text_arg1, "1", sizeof(entries[2].text_arg1));  // 1 = enable friendly fire
-
+	Q_strlcpy(entries[2].text_arg1, "1", sizeof(entries[2].text_arg1));
 	Q_strlcpy(entries[3].text, "OFF", sizeof(entries[3].text));
-	Q_strlcpy(entries[3].text_arg1, "0", sizeof(entries[3].text_arg1));  // 0 = disable friendly fire
+	Q_strlcpy(entries[3].text_arg1, "0", sizeof(entries[3].text_arg1));
 }
 
 void G_Menu_CallVote_FriendlyFire_Selection(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+	char value[64];
+	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
 		return;
-	}
 
-	if (!p || !p->entries || p->cur < 0 || p->cur >= p->num) {
-		gi.Com_PrintFmt("{}: invalid friendly fire selection index.\n", __FUNCTION__);
-		return;
-	}
-
-	// CRITICAL: Disable UpdateFunc immediately to prevent it from corrupting menu entries
-	UpdateFunc_t saved_update_func = p->UpdateFunc;
-	p->UpdateFunc = nullptr;
-
-	char ff_value[64];
-	int cur_index = p->cur;
-
-	// Validate index is still valid
-	if (cur_index < 0 || cur_index >= p->num) {
-		p->UpdateFunc = saved_update_func;
-		gi.Com_PrintFmt("{}: friendly fire selection index became invalid.\n", __FUNCTION__);
-		return;
-	}
-
-	// Copy the stored raw value (text_arg1) immediately to local buffer
-	Q_strlcpy(ff_value, p->entries[cur_index].text_arg1, sizeof(ff_value));
-
-	// Restore UpdateFunc now that we've read the value
-	p->UpdateFunc = saved_update_func;
-
-	if (!ff_value[0]) {
-		gi.Com_PrintFmt("{}: no friendly fire state selected.\n", __FUNCTION__);
-		return;
-	}
-
-	// Validate the value
-	int value = strtoul(ff_value, nullptr, 10);
-	if (value != 0 && value != 1) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid friendly fire state value.\n");
-		return;
-	}
-
-	// Check if this would actually change the state
+	int v = strtoul(value, nullptr, 10);
 	bool currently_enabled = g_friendly_fire->integer != 0;
-	bool will_be_enabled = (value == 1);
-	if (currently_enabled == will_be_enabled) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Friendly fire is already {}.\n", will_be_enabled ? "ENABLED" : "DISABLED");
+	if (currently_enabled == (v == 1)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Friendly fire is already {}.\n", v ? "ENABLED" : "DISABLED");
 		return;
 	}
 
-	// Make a second C string copy for extra safety before closing menu
-	char ff_value_final[64];
-	Q_strlcpy(ff_value_final, ff_value, sizeof(ff_value_final));
-
-	// Close menu FIRST to prevent any menu operations from interfering
-	P_Menu_Close(ent);
-
-	// Convert to std::string AFTER menu is closed
-	std::string ff_value_std = ff_value_final;
-
-	// Set vote data
-	level.vote_state.command = FindVoteCmdByName("friendlyfire");
-	level.vote_state.arg.clear();
-	level.vote_state.arg.reserve(2);
-	level.vote_state.arg.assign(ff_value_std.c_str(), ff_value_std.length());
-
-	VoteCommandStore(ent);
+	MenuVote_Initiate(ent, "friendlyfire", value);
 }
 
 void G_Menu_CallVote_FriendlyFire(gentity_t *ent, menu_hnd_t *p) {
-	// Check if spectator is allowed to vote
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
-		return;
-	}
-
 	P_Menu_Close(ent);
 	P_Menu_Open(ent, pmcallvotemenu_friendlyfire, -1, sizeof(pmcallvotemenu_friendlyfire) / sizeof(menu_t), nullptr, G_Menu_CallVote_FriendlyFire_Update);
 }
@@ -1577,7 +1135,6 @@ static void G_Menu_Vote_Yes(gentity_t *ent, menu_hnd_t *p) {
 		return;
 	}
 
-	level.vote_state.yes_votes++;
 	ent->client->pers.voted = 1;
 
 	gi.LocClient_Print(ent, PRINT_HIGH, "Vote cast.\n");
@@ -1596,7 +1153,6 @@ static void G_Menu_Vote_No(gentity_t *ent, menu_hnd_t *p) {
 		return;
 	}
 
-	level.vote_state.no_votes++;
 	ent->client->pers.voted = -1;
 
 	gi.LocClient_Print(ent, PRINT_HIGH, "Vote cast.\n");

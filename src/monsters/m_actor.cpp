@@ -201,8 +201,12 @@ static PAIN(actor_pain) (gentity_t *self, gentity_t *other, float kick, int dama
 			M_SetAnimation(self, &actor_move_flipoff);
 		else
 			M_SetAnimation(self, &actor_move_taunt);
-		name = actor_names[(self - g_entities) % q_countof(actor_names)];
-		gi.LocClient_Print(other, PRINT_CHAT, "{}: {}!\n", name, random_element(messages));
+		// [Paril-KEX] Defensive: validate array bounds and client
+		size_t actor_index = (self - g_entities) % q_countof(actor_names);
+		if (actor_index < q_countof(actor_names) && other && other->client && other->inuse) {
+			name = actor_names[actor_index];
+			gi.LocClient_Print(other, PRINT_CHAT, "{}: {}!\n", name, random_element(messages));
+		}
 		return;
 	}
 
@@ -435,9 +439,19 @@ static TOUCH(target_actor_touch) (gentity_t *self, gentity_t *other, const trace
 
 	other->goalentity = other->movetarget = nullptr;
 
-	if (self->message)
-		for (auto ce : active_clients())
-			gi.LocClient_Print(ce, PRINT_CHAT, "{}: {}\n", actor_names[(other - g_entities) % q_countof(actor_names)], self->message);
+	// [Paril-KEX] Defensive: validate message pointer and clients before printing
+	// Check that message is not just non-null but actually valid (not a small corrupted pointer)
+	if (self->message && reinterpret_cast<size_t>(self->message) > 0x1000) {
+		// Validate actor index is in bounds
+		size_t actor_index = (other - g_entities) % q_countof(actor_names);
+		if (actor_index < q_countof(actor_names)) {
+			for (auto ce : active_clients()) {
+				// Extra safety: ensure client entity is still valid
+				if (ce && ce->client && ce->inuse)
+					gi.LocClient_Print(ce, PRINT_CHAT, "{}: {}\n", actor_names[actor_index], self->message);
+			}
+		}
+	}
 
 	if (self->spawnflags.has(SPAWNFLAG_TARGET_ACTOR_JUMP)) { // jump
 		other->velocity[0] = self->movedir[0] * self->speed;

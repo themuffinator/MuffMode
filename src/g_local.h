@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.52";
+constexpr const char *GAMEMOD_VERSION = "0.21.55";
 
 //==================================================================
 
@@ -804,9 +804,9 @@ struct VoteStateData {
 	gclient_t *caller;
 	gtime_t start_time;
 	gtime_t execute_time;
-	int8_t yes_votes;
-	int8_t no_votes;
-	int8_t num_eligible;
+	int yes_votes;
+	int no_votes;
+	int num_eligible;
 	
 	VoteStateData() : 
 		state(VoteState::IDLE),
@@ -2597,8 +2597,9 @@ void Cmd_ReadyUp_f(gentity_t *ent);
 void VoteCommandStore(gentity_t *ent);
 void TransitionVoteState(VoteState new_state);
 void ClearVote();
-bool IsVoteStateValid();
 vcmds_t *FindVoteCmdByName(const char *name);
+bool IsGametypeVotable(gametype_t gt);
+bool IsRulesetVotable(ruleset_t rs);
 void Vote_Pass_Map();
 void Vote_Pass_RestartMatch();
 void Vote_Pass_Gametype();

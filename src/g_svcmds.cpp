@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "g_local.h"
+#include "g_debug_log.h"
 
 static void Svcmd_Test_f() {
 	gi.LocClient_Print(nullptr, PRINT_HIGH, "Svcmd_Test_f()\n");
@@ -259,6 +260,48 @@ The game can issue gi.argc() / gi.argv() commands to get the rest
 of the parameters
 =================
 */
+// Server command to change to first map in g_map_list after gametype config executes
+static void SVCmd_GametypeChangeMapFirst_f() {
+	// This executes AFTER the gametype config has run and set the new g_map_list
+	// Extract the first map from g_map_list and change to it
+	
+	const char *first_map = nullptr;
+	
+	// Try to get first map from g_map_list (rotation maps)
+	if (g_map_list->string[0]) {
+		const char *mlist = g_map_list->string;
+		char *token;
+		
+		// Get first token from map list
+		if ((token = COM_Parse(&mlist)) && *token) {
+			first_map = token;
+			MuffModeLog("GAMETYPE", "SVCmd_GametypeChangeMapFirst_f: Found map '%s' from g_map_list", first_map);
+		}
+	}
+	
+	// If no map found in g_map_list, fall back to current map
+	if (!first_map || !first_map[0]) {
+		first_map = level.mapname;
+		MuffModeLog("GAMETYPE", "SVCmd_GametypeChangeMapFirst_f: No map in g_map_list, reloading current map '%s'", first_map);
+	}
+	
+	// Store in safe storage
+	if (strlen(first_map) >= sizeof(level.nextmap)) {
+		gi.Com_PrintFmt("ERROR: Map name too long: {}\n", first_map);
+		MuffModeLog("GAMETYPE", "ERROR: Map name too long: %s", first_map);
+		return;
+	}
+	
+	Q_strlcpy(level.nextmap, first_map, sizeof(level.nextmap));
+	level.nextmap[sizeof(level.nextmap) - 1] = '\0';
+	level.changemap = level.nextmap;
+	
+	MuffModeLog("GAMETYPE", "Gametype change complete, loading map: %s", level.nextmap);
+	
+	// Use proper exit flow
+	ExitLevel();
+}
+
 void ServerCommand() {
 	const char *cmd = gi.argv(1);
 
@@ -274,6 +317,8 @@ void ServerCommand() {
 		SVCmd_WriteIP_f();
 	else if (Q_strcasecmp(cmd, "nextmap") == 0)
 		SVCmd_NextMap_f();
+	else if (Q_strcasecmp(cmd, "gt_changemap_first") == 0)
+		SVCmd_GametypeChangeMapFirst_f();
 	else
 		gi.LocClient_Print(nullptr, PRINT_HIGH, "Unknown server command \"{}\"\n", cmd);
 }

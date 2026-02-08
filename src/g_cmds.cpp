@@ -2419,7 +2419,7 @@ static void Cmd_Boot_f(gentity_t *ent) {
 		return;
 	}
 
-	if (*gi.argv(1) < '0' && *gi.argv(1) > '9') {
+	if (*gi.argv(1) < '0' || *gi.argv(1) > '9') {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Specify the player number to kick.\n");
 		return;
 	}
@@ -2453,50 +2453,13 @@ static bool Vote_Val_None(gentity_t *ent) {
 }
 
 void Vote_Pass_Map() {
-	// Store map name in level.nextmap buffer to avoid dangling pointer
-	// Must copy to safe storage since vote state will be cleared after this function returns
-	
-	MuffModeLog("MAP", "Vote_Pass_Map: called with arg='%s'", level.vote_state.arg.c_str());
-	
-	if (level.vote_state.arg.empty()) {
-		const char *error_msg = "Vote_Pass_Map: vote_arg is empty";
-		gi.Com_Print(error_msg);
-		gi.Com_Print("\n");
-		MuffModeLog("MAP", "ERROR: %s", error_msg);
-		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: no map name specified.\n");
+	if (level.vote_state.arg.empty() || level.vote_state.arg.length() >= sizeof(level.nextmap)) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: invalid map name.\n");
 		return;
 	}
-	
-	if (level.vote_state.arg.length() >= sizeof(level.nextmap)) {
-		const char *error_msg = G_Fmt("Map name too long: {}", level.vote_state.arg).data();
-		gi.Com_Print(error_msg);
-		gi.Com_Print("\n");
-		MuffModeLog("MAP", "ERROR: %s", error_msg);
-		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: map name too long.\n");
-		return;
-	}
-	
+
 	Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
-	
-	// Validate the copy was successful and the string is valid
-	if (!level.nextmap[0]) {
-		const char *error_msg = "Vote_Pass_Map: Failed to copy map name to nextmap";
-		gi.Com_Print(error_msg);
-		gi.Com_Print("\n");
-		MuffModeLog("MAP", "ERROR: %s", error_msg);
-		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: internal error.\n");
-		return;
-	}
-	
-	// Ensure the string is null-terminated
-	level.nextmap[sizeof(level.nextmap) - 1] = '\0';
-	
-	MuffModeLog("MAP", "Vote passed: changing map from '%s' to '%s'", level.mapname, level.nextmap);
-	level.changemap = level.nextmap;  // Now points to safe storage
-	
-	// Transition to COMPLETE before map change to ensure state machine consistency
-	// This matches the recovery path in CheckVote() and ensures proper state cleanup
-	TransitionVoteState(VoteState::COMPLETE);
+	level.changemap = level.nextmap;
 	ExitLevel();
 }
 
@@ -2531,101 +2494,54 @@ static bool IsMapValid(const char *mapname) {
 	return false;
 }
 
-static bool Vote_Val_Map(gentity_t *ent) {
-	// Debug logging for vote argument parsing
-	MuffModeLog("VOTE", "Vote_Val_Map: argc=%d, argv(2)='%s'", gi.argc(), gi.argc() >= 3 ? gi.argv(2) : "(none)");
-	
-	// Helper function to get combined and deduplicated map list
-	auto get_combined_maps = []() -> std::vector<std::string> {
-		std::vector<std::string> all_maps;
-		char *token;
-		
-		// Helper lambda to check if a map already exists (case-insensitive)
-		auto map_exists = [&all_maps](const char *map) -> bool {
-			for (const auto &existing : all_maps) {
-				if (!Q_strcasecmp(existing.c_str(), map))
-					return true;
-			}
-			return false;
-		};
-		
-		// Add maps from g_map_pool first
-		if (g_map_pool->string[0]) {
-			const char *pool = g_map_pool->string;
-			while ((token = COM_Parse(&pool)) && *token) {
-				if (!map_exists(token)) {
-					all_maps.push_back(token);
-				}
-			}
-		}
-		
-		// Add maps from g_map_list (skip duplicates)
-		if (g_map_list->string[0]) {
-			const char *mlist = g_map_list->string;
-			while ((token = COM_Parse(&mlist)) && *token) {
-				if (!map_exists(token)) {
-					all_maps.push_back(token);
-				}
-			}
-		}
-		
-		return all_maps;
+static void PrintAvailableMaps(gentity_t *ent) {
+	std::vector<std::string> all_maps;
+	char *token;
+
+	auto map_exists = [&all_maps](const char *map) -> bool {
+		for (const auto &existing : all_maps)
+			if (!Q_strcasecmp(existing.c_str(), map))
+				return true;
+		return false;
 	};
 
-	if (gi.argc() < 3) {
-		// Show available maps from pool first, then list
-		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
-		std::string map_display;
-
-		auto all_maps = get_combined_maps();
-		if (all_maps.size()) {
-			// Sort maps alphabetically (case-insensitive)
-			std::sort(all_maps.begin(), all_maps.end(), [](const std::string &a, const std::string &b) {
-				return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
-			});
-			map_display = join_strings(all_maps, " ");
-		}
-
-		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {
-			map_display = map_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
-		}
-
-		if (map_display.length()) {
-			gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", map_display.c_str());
-		} else {
-			gi.LocClient_Print(ent, PRINT_HIGH, "No map list or pool configured.\n");
-		}
-		return false;
+	if (g_map_pool->string[0]) {
+		const char *pool = g_map_pool->string;
+		while ((token = COM_Parse(&pool)) && *token)
+			if (!map_exists(token))
+				all_maps.push_back(token);
+	}
+	if (g_map_list->string[0]) {
+		const char *mlist = g_map_list->string;
+		while ((token = COM_Parse(&mlist)) && *token)
+			if (!map_exists(token))
+				all_maps.push_back(token);
 	}
 
-	// Check for empty map argument (catches "callvote map \"\"")
-	if (!gi.argv(2)[0]) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Map name cannot be empty.\n");
+	if (all_maps.empty()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "No map list or pool configured.\n");
+		return;
+	}
+
+	std::sort(all_maps.begin(), all_maps.end(), [](const std::string &a, const std::string &b) {
+		return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
+	});
+
+	std::string display = join_strings(all_maps, " ");
+	if (display.length() > 256)
+		display = display.substr(0, 256) + "...";
+	gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", display.c_str());
+}
+
+static bool Vote_Val_Map(gentity_t *ent) {
+	if (gi.argc() < 3 || !gi.argv(2)[0]) {
+		PrintAvailableMaps(ent);
 		return false;
 	}
 
 	if (!IsMapValid(gi.argv(2))) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Unknown map.\n");
-		// Show available maps
-		constexpr size_t MAX_MAP_LIST_DISPLAY = 256;
-		std::string map_display;
-
-		auto all_maps = get_combined_maps();
-		if (all_maps.size()) {
-			// Sort maps alphabetically (case-insensitive)
-			std::sort(all_maps.begin(), all_maps.end(), [](const std::string &a, const std::string &b) {
-				return Q_strcasecmp(a.c_str(), b.c_str()) < 0;
-			});
-			map_display = join_strings(all_maps, " ");
-		}
-
-		if (map_display.length() > MAX_MAP_LIST_DISPLAY) {
-			map_display = map_display.substr(0, MAX_MAP_LIST_DISPLAY) + "...";
-		}
-
-		if (map_display.length()) {
-			gi.LocClient_Print(ent, PRINT_HIGH, "Valid maps are: {}\n", map_display.c_str());
-		}
+		PrintAvailableMaps(ent);
 		return false;
 	}
 
@@ -2638,18 +2554,20 @@ void Vote_Pass_RestartMatch() {
 
 void Vote_Pass_Gametype() {
 	gametype_t gt = GT_IndexFromString(level.vote_state.arg.data());
-	if (gt == GT_NONE) {
-		MuffModeLog("GAMETYPE", "ERROR: Invalid gametype string: %s", level.vote_state.arg.c_str());
+	if (gt == GT_NONE)
 		return;
-	}
-	
-	MuffModeLog("GAMETYPE", "Vote passed: changing gametype to %s (arg=%s)", 
-	           gt_short_name[(int)gt], level.vote_state.arg.c_str());
+
+	// Change the gametype (this sets cvars and queues config exec)
 	ChangeGametype(gt);
+	
+	// Queue a special server command that will execute AFTER the gametype config
+	// This command will read the NEW g_map_list and change to the first map in it
+	// Note: "sv" prefix is required to invoke ServerCommand() handler
+	gi.AddCommandString("sv gt_changemap_first\n");
 }
 
 // Helper function to check if a gametype is votable
-static bool IsGametypeVotable(gametype_t gt) {
+bool IsGametypeVotable(gametype_t gt) {
 	// If no votable list is set, allow all gametypes (backward compatible)
 	if (!g_votable_gametypes->string[0])
 		return true;
@@ -2699,7 +2617,7 @@ static std::string GetVotableGametypesList() {
 }
 
 // Helper function to check if a ruleset is votable
-static bool IsRulesetVotable(ruleset_t rs) {
+bool IsRulesetVotable(ruleset_t rs) {
 	// If no votable list is set, allow all rulesets (backward compatible)
 	if (!g_votable_rulesets->string[0])
 		return true;
@@ -2819,9 +2737,6 @@ static bool Vote_Val_Ruleset(gentity_t *ent) {
 }
 
 void Vote_Pass_NextMap() {
-	// Transition to COMPLETE before map change to ensure state machine consistency
-	// This matches Vote_Pass_Map() and ensures proper state cleanup
-	TransitionVoteState(VoteState::COMPLETE);
 	Match_End();
 	level.intermission_exit = true;
 }
@@ -3267,36 +3182,20 @@ Centralized state transition function
 */
 void TransitionVoteState(VoteState new_state) {
 	VoteState old_state = level.vote_state.state;
-	
-	// Skip no-op transitions (same state -> same state)
-	// This can happen when Vote_Pass_Map() transitions to COMPLETE before Vote_Passed() does
-	if (old_state == new_state) {
-		// Already in desired state, nothing to do
+
+	if (old_state == new_state)
 		return;
-	}
-	
-	// Validate transition
+
 	if (!IsValidVoteTransition(old_state, new_state)) {
-		gi.Com_PrintFmt("Invalid vote state transition: {} -> {}\n", 
-		               (int)old_state, (int)new_state);
 		MuffModeLog("VOTE", "Invalid state transition: %d -> %d", (int)old_state, (int)new_state);
 		return;
 	}
-	
-	// Log state transition (only if not a no-op)
-	if (old_state != new_state) {
-		const char* state_names[] = { "IDLE", "ACTIVE", "PASSED", "EXECUTING", "FAILED", "COMPLETE" };
-		MuffModeLog("VOTE", "State transition: %s -> %s", 
-		           state_names[(int)old_state], state_names[(int)new_state]);
-	}
-	
-	// State change
+
 	level.vote_state.state = new_state;
-	
+
 	// Entry actions for new state
 	switch (new_state) {
 		case VoteState::IDLE:
-			// Clear all vote data
 			level.vote_state.command = nullptr;
 			level.vote_state.arg.clear();
 			level.vote_state.caller = nullptr;
@@ -3305,33 +3204,10 @@ void TransitionVoteState(VoteState new_state) {
 			level.vote_state.yes_votes = 0;
 			level.vote_state.no_votes = 0;
 			level.vote_state.num_eligible = 0;
-			MuffModeLog("VOTE", "Vote state cleared (IDLE)");
 			break;
-			
 		case VoteState::PASSED:
-			// Set execution time for 3 second delay
 			level.vote_state.execute_time = level.time + 3_sec;
-			MuffModeLog("VOTE", "Vote passed, will execute in 3 seconds (command=%s, arg=%s)", 
-			           level.vote_state.command ? level.vote_state.command->name : "null",
-			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
 			break;
-			
-		case VoteState::EXECUTING:
-			MuffModeLog("VOTE", "Executing vote command: %s %s", 
-			           level.vote_state.command ? level.vote_state.command->name : "null",
-			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
-			break;
-			
-		case VoteState::FAILED:
-			MuffModeLog("VOTE", "Vote failed (command=%s, arg=%s)", 
-			           level.vote_state.command ? level.vote_state.command->name : "null",
-			           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str());
-			break;
-			
-		case VoteState::COMPLETE:
-			MuffModeLog("VOTE", "Vote completed successfully");
-			break;
-			
 		default:
 			break;
 	}
@@ -3349,52 +3225,17 @@ void ClearVote() {
 }
 
 /*
-===============
-IsVoteStateValid
-
-Checks if current vote state is valid
-===============
-*/
-bool IsVoteStateValid() {
-	switch (level.vote_state.state) {
-		case VoteState::IDLE:
-			return level.vote_state.command == nullptr &&
-			       level.vote_state.caller == nullptr;
-			       
-		case VoteState::ACTIVE:
-		case VoteState::PASSED:
-			return level.vote_state.command != nullptr &&
-			       level.vote_state.caller != nullptr;
-			       
-		case VoteState::EXECUTING:
-			// Command may be null if state was corrupted, but we can recover
-			return level.vote_state.caller != nullptr || 
-			       !level.vote_state.arg.empty();
-			       
-		case VoteState::FAILED:
-		case VoteState::COMPLETE:
-			// These states are valid but will transition to IDLE
-			return true;
-			
-		default:
-			return false;
-	}
-}
-
-/*
 ==================
 Vote_Passed
 ==================
 */
 void Vote_Passed() {
 	if (!level.vote_state.command) {
-		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed but command was lost. Please try again.\n");
-		MuffModeLog("VOTE", "ERROR: Vote passed but command was lost");
+		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed but command was lost.\n");
 		TransitionVoteState(VoteState::FAILED);
 		return;
 	}
 
-	MuffModeLog("VOTE", "Executing vote command function: %s", level.vote_state.command->name);
 	level.vote_state.command->func();
 	TransitionVoteState(VoteState::COMPLETE);
 }
@@ -3406,12 +3247,11 @@ ValidVoteCommand
 */
 static bool ValidVoteCommand(gentity_t *ent) {
 	if (!ent->client)
-		return false; // not fully in game yet
+		return false;
 
 	level.vote_state.command = nullptr;
 
 	vcmds_t *cc = FindVoteCmdByName(gi.argv(1));
-
 	if (!cc) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid vote command: {}\n", gi.argv(1));
 		return false;
@@ -3427,48 +3267,24 @@ static bool ValidVoteCommand(gentity_t *ent) {
 
 	level.vote_state.command = cc;
 	
-	// For handicap votes, concatenate all remaining arguments (player weapon on/off)
+	// Build the vote argument string
 	std::string raw_arg;
 	if (!Q_strcasecmp(cc->name, "handicap") && gi.argc() >= 5) {
-		// Player name is argv(2), weapon is argv(3), on/off is argv(4)
-		// If player name contains spaces, it was quoted - re-quote it for storage
 		std::string player_name = gi.argv(2);
-		if (player_name.find(' ') != std::string::npos) {
-			// Re-quote the player name
+		if (player_name.find(' ') != std::string::npos)
 			raw_arg = "\"" + player_name + "\" " + std::string(gi.argv(3)) + " " + std::string(gi.argv(4));
-		} else {
+		else
 			raw_arg = player_name + " " + std::string(gi.argv(3)) + " " + std::string(gi.argv(4));
-		}
 	} else {
 		raw_arg = gi.argc() > 2 ? gi.argv(2) : "";
 	}
 	
-	// Debug logging for vote argument storage
-	MuffModeLog("VOTE", "VoteCommandStore: command='%s', raw_arg='%s', argc=%d", 
-	           cc->name, raw_arg.c_str(), gi.argc());
-	
-	// Limit vote_arg length to prevent message buffer overflow
-	// MAX_QPATH is 64, but we allow a bit more for safety (128 chars should be plenty)
 	constexpr size_t MAX_VOTE_ARG_LENGTH = 128;
 	if (raw_arg.length() > MAX_VOTE_ARG_LENGTH) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Vote argument too long (max {} characters).\n", MAX_VOTE_ARG_LENGTH);
 		return false;
 	}
 	level.vote_state.arg = raw_arg;
-	
-	// Debug: Verify assignment was successful - use hex dump to see actual bytes
-	std::string hex_dump;
-	for (size_t i = 0; i < level.vote_state.arg.length() && i < 20; i++) {
-		char buf[8];
-		snprintf(buf, sizeof(buf), "%02X ", (unsigned char)level.vote_state.arg[i]);
-		hex_dump += buf;
-	}
-	MuffModeLog("VOTE", "ValidVoteCommand: After assignment, level.vote_state.arg length=%d, hex=[%s]", 
-	           (int)level.vote_state.arg.length(), hex_dump.c_str());
-	MuffModeLog("VOTE", "ValidVoteCommand: raw_arg='%s', level.vote_state.arg='%s'",
-	           raw_arg.c_str(), level.vote_state.arg.c_str());
-	
-	//gi.Com_PrintFmt("argv={} vote_arg={}\n", gi.argv(2), level.vote_state.arg);
 	return true;
 }
 
@@ -3478,82 +3294,83 @@ VoteCommandStore
 =================
 */
 void VoteCommandStore(gentity_t *ent) {
-	// start the voting, the caller automatically votes yes
 	if (!level.vote_state.command) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Internal error: vote command was lost.\n");
 		return;
 	}
 
-	// Debug: Check arg state at entry to VoteCommandStore
-	MuffModeLog("VOTE", "VoteCommandStore: Entry, level.vote_state.arg='%s' (length=%d)", 
-	           level.vote_state.arg.c_str(), (int)level.vote_state.arg.length());
+	if (!g_allow_voting->integer) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Voting not allowed here.\n");
+		return;
+	}
+
+	if (g_vote_flags->integer & level.vote_state.command->flag) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "This vote type is not allowed.\n");
+		return;
+	}
+
+	if (level.vote_state.state != VoteState::IDLE) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "A vote is already in progress.\n");
+		return;
+	}
+
+	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
+		return;
+	}
+
+	if (g_vote_limit->integer && ent->client->pers.vote_count >= g_vote_limit->integer) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You have called the maximum number of votes ({}).\n", g_vote_limit->integer);
+		return;
+	}
+
+	if (!g_allow_vote_midgame->integer && level.match_state >= matchst_t::MATCH_COUNTDOWN) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Voting is only allowed during the warm up period.\n");
+		return;
+	}
 
 	// Initialize vote state
 	level.vote_state.caller = ent->client;
 	level.vote_state.start_time = level.time;
 	level.vote_state.yes_votes = 1;
 	level.vote_state.no_votes = 0;
-	
-	// Calculate eligible voters
+
+	// Count eligible voters (non-bot humans; spectators only if g_allow_spec_vote)
 	level.vote_state.num_eligible = 0;
 	for (auto ec : active_clients()) {
-		bool is_playing = ClientIsPlaying(ec->client);
-		bool is_bot = ec->client->sess.is_a_bot;
-		bool spec_vote_allowed = g_allow_spec_vote->integer != 0;
-		
-		MuffModeLog("VOTE", "Checking client '%s': is_playing=%d, is_bot=%d, team=%d, spec_vote_allowed=%d",
-		           ec->client->resp.netname, is_playing, is_bot, ec->client->sess.team, spec_vote_allowed);
-		
-		if (!is_playing && !spec_vote_allowed) {
-			MuffModeLog("VOTE", "  -> Excluded: spectator and spec voting disabled");
+		if (ec->client->sess.is_a_bot)
 			continue;
-		}
-		if (is_bot) {
-			MuffModeLog("VOTE", "  -> Excluded: is a bot");
+		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
 			continue;
-		}
-		MuffModeLog("VOTE", "  -> Included as eligible voter");
 		level.vote_state.num_eligible++;
 	}
-	
-	MuffModeLog("VOTE", "Vote initiated: command=%s, arg=%s, caller=%s, eligible_voters=%d", 
-	           level.vote_state.command->name,
-	           level.vote_state.arg.empty() ? "(empty)" : level.vote_state.arg.c_str(),
-	           level.vote_state.caller->resp.netname,
-	           level.vote_state.num_eligible);
-	
-	// Broadcast vote message - avoid temporary strings to prevent dangling pointer bugs
-	// Pass level.vote_state.arg directly since it persists for the vote duration
-	if (level.vote_state.arg.empty()) {
-		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}\n", 
-		                      level.vote_state.caller->resp.netname, 
-		                      level.vote_state.command->name);
-	} else {
-		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{} {}\n", 
-		                      level.vote_state.caller->resp.netname, 
-		                      level.vote_state.command->name, 
-		                      level.vote_state.arg.c_str());
-	}
 
+	MuffModeLog("VOTE", "Vote started: %s %s by %s (%d eligible)",
+	           level.vote_state.command->name,
+	           level.vote_state.arg.empty() ? "" : level.vote_state.arg.c_str(),
+	           ent->client->resp.netname,
+	           level.vote_state.num_eligible);
+
+	// Broadcast
+	if (level.vote_state.arg.empty())
+		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}\n", ent->client->resp.netname, level.vote_state.command->name);
+	else
+		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{} {}\n", ent->client->resp.netname, level.vote_state.command->name, level.vote_state.arg.c_str());
+
+	// Caller auto-votes yes, everyone else reset
 	for (auto ec : active_clients())
 		ec->client->pers.voted = ec == ent ? 1 : 0;
 
 	ent->client->pers.vote_count++;
 	AnnouncerSound(world, "vote_now", "misc/pc_up.wav", true);
-
-	// Transition to ACTIVE state BEFORE opening menus
-	// This ensures Vote_Menu_Active() returns true when P_Menu_Open() checks it
 	TransitionVoteState(VoteState::ACTIVE);
 
-	for (auto ec : active_players()) {
-		if (ec->svflags & SVF_BOT)
+	// Open vote menu for eligible non-caller clients
+	for (auto ec : active_clients()) {
+		if (ec->svflags & SVF_BOT || ec->client->sess.is_a_bot)
 			continue;
-
-		//gi.local_sound(ec, CHAN_AUTO, gi.soundindex("misc/pc_up.wav"), 1, ATTN_NONE, 0);
-
 		if (ec->client == level.vote_state.caller)
 			continue;
-
 		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
 			continue;
 
@@ -3599,10 +3416,7 @@ static void Cmd_CallVote_f(gentity_t *ent) {
 		return;
 	}
 
-	if (!g_allow_vote_midgame->integer && level.match_state >= matchst_t::MATCH_COUNTDOWN) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Voting is only allowed during the warm up period.\n");
-		return;
-	}
+	// Note: g_allow_vote_midgame check is now in VoteCommandStore() to apply to both console and menu voting
 
 	if (level.vote_state.state != VoteState::IDLE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "A vote is already in progress.\n");
@@ -3646,7 +3460,7 @@ static void Cmd_Vote_f(gentity_t *ent) {
 	if (!deathmatch->integer)
 		return;
 
-	if (!ClientIsPlaying(ent->client)) {
+	if (!ClientIsPlaying(ent->client) && !g_allow_spec_vote->integer) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Not allowed to vote as spectator.\n");
 		return;
 	}
@@ -3669,10 +3483,8 @@ static void Cmd_Vote_f(gentity_t *ent) {
 	const char *arg = gi.argv(1);
 
 	if (arg[0] == 'y' || arg[0] == 'Y' || arg[0] == '1') {
-		level.vote_state.yes_votes++;
 		ent->client->pers.voted = 1;
 	} else {
-		level.vote_state.no_votes++;
 		ent->client->pers.voted = -1;
 	}
 
@@ -3689,14 +3501,8 @@ void G_RevertVote(gclient_t *client) {
 	if (!level.vote_state.caller)
 		return;
 
-	if (client->pers.voted == 1) {
-		level.vote_state.yes_votes--;
+	if (client->pers.voted != 0) {
 		client->pers.voted = 0;
-		//trap_SetConfigstring(CS_VOTE_YES, va("%i", level.vote_state.yes_votes));
-	} else if (client->pers.voted == -1) {
-		level.vote_state.no_votes--;
-		client->pers.voted = 0;
-		//trap_SetConfigstring(CS_VOTE_NO, va("%i", level.vote_state.no_votes));
 	}
 }
 
