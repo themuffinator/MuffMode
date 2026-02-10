@@ -735,6 +735,8 @@ void ChangeGametype(gametype_t gt) {
 		// This ensures cfg runs on gametype change, not on every map load
 		if (g_gametype_cfg->integer && deathmatch->integer) {
 			gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[(int)gt]).data());
+			// Shuffle the map list after the config has set it (runs after exec completes)
+			gi.AddCommandString("sv shuffle_maplist\n");
 		}
 		
 		// Update tracking vars to prevent GT_Changes() from triggering a redundant reload
@@ -902,11 +904,12 @@ static void PreInitGame() {
 ============
 G_ShuffleMapListOnce
 
-Shuffle the map list once at server startup if g_map_list_shuffle_once is enabled.
+Shuffle the map list if g_map_list_shuffle_once is enabled.
+Called on initial server startup and on gametype change.
 Forward declaration.
 ============
 */
-static void G_ShuffleMapListOnce();
+void G_ShuffleMapListOnce();
 
 /*
 ============
@@ -1228,8 +1231,9 @@ static void InitGame() {
 	// when gametype actually changes, not on every map load. This prevents
 	// cfg files from overriding player votes and map progression.
 
-	// Shuffle map list once on initialization if enabled
-	G_ShuffleMapListOnce();
+	// Note: Map list shuffling is handled by ChangeGametype() which queues
+	// "sv shuffle_maplist" after the gametype config exec. This ensures the
+	// shuffle happens after the config has set the new g_map_list.
 }
 
 //===================================================================
@@ -2357,7 +2361,22 @@ static void UpdateActiveVote() {
 		return;
 	}
 
-	// Vote counts are maintained by CalculateRanks(); just check majority here
+	// Recount votes from client state each frame
+	level.vote_state.yes_votes = 0;
+	level.vote_state.no_votes = 0;
+	level.vote_state.num_eligible = 0;
+	for (auto ec : active_clients()) {
+		if (ec->client->sess.is_a_bot)
+			continue;
+		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+			continue;
+		level.vote_state.num_eligible++;
+		if (ec->client->pers.voted == 1)
+			level.vote_state.yes_votes++;
+		else if (ec->client->pers.voted == -1)
+			level.vote_state.no_votes++;
+	}
+
 	int halfpoint = level.vote_state.num_eligible / 2;
 
 	if (level.vote_state.yes_votes > halfpoint) {
@@ -2904,23 +2923,6 @@ void CalculateRanks() {
 	// see if it is time to end the level
 	CheckDMExitRules();
 
-	// Recalculate vote counts if a vote is in progress (players may have joined/left)
-	if (level.vote_state.state == VoteState::ACTIVE) {
-		level.vote_state.yes_votes = 0;
-		level.vote_state.no_votes = 0;
-		level.vote_state.num_eligible = 0;
-		for (auto ec : active_clients()) {
-			if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
-				continue;
-			if (ec->client->sess.is_a_bot)
-				continue;
-			level.vote_state.num_eligible++;
-			if (ec->client->pers.voted == 1)
-				level.vote_state.yes_votes++;
-			else if (ec->client->pers.voted == -1)
-				level.vote_state.no_votes++;
-		}
-	}
 }
 
 //===================================================================
@@ -3182,11 +3184,11 @@ inline std::vector<std::string> str_split(const std::string_view &str, char by) 
 =================
 G_ShuffleMapListOnce
 
-Shuffle the map list once at server startup if g_map_list_shuffle_once is enabled.
-This provides randomized map order while maintaining predictability during a play session.
+Shuffle the map list if g_map_list_shuffle_once is enabled.
+Called on initial server startup and on gametype change.
 =================
 */
-static void G_ShuffleMapListOnce() {
+void G_ShuffleMapListOnce() {
 	if (!g_map_list_shuffle_once->integer || !*g_map_list->string)
 		return;
 
@@ -3714,6 +3716,9 @@ void ExitLevel() {
 		MuffModeLog("MAP", "Exiting level '%s' (no next map specified)", level.mapname);
 	}
 	
+	MuffModeLog("DEBUG", "ExitLevel: screenshot check - dm=%d, shots=%d, humans=%d, playing=%d",
+		deathmatch->integer, g_dm_intermission_shots->integer, level.num_playing_human_clients, level.num_playing_clients);
+
 	// Take screenshot at match end (when exiting level)
 	if (deathmatch->integer && g_dm_intermission_shots->integer && level.num_playing_human_clients > 0) {
 		struct tm *ltime;
@@ -3744,10 +3749,14 @@ void ExitLevel() {
 		const char *s = "";
 
 		if (GT(GT_DUEL) && level.num_playing_clients >= 2) {
+			MuffModeLog("DEBUG", "ExitLevel: duel screenshot - sorted[0]=%d, sorted[1]=%d",
+				level.sorted_clients[0], level.sorted_clients[1]);
 			gentity_t *e1 = &g_entities[level.sorted_clients[0] + 1];
 			gentity_t *e2 = &g_entities[level.sorted_clients[1] + 1];
-			std::string n1 = sanitize_name(e1 ? e1->client->resp.netname : "");
-			std::string n2 = sanitize_name(e2 ? e2->client->resp.netname : "");
+			MuffModeLog("DEBUG", "ExitLevel: e1->client=%p, e2->client=%p",
+				(void*)e1->client, (void*)e2->client);
+			std::string n1 = sanitize_name((e1->client && e1->inuse) ? e1->client->resp.netname : "");
+			std::string n2 = sanitize_name((e2->client && e2->inuse) ? e2->client->resp.netname : "");
 
 			const char *filename = G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
 				n1.c_str(), n2.c_str(), level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
@@ -3775,8 +3784,10 @@ void ExitLevel() {
 		return;
 	}
 
+	MuffModeLog("DEBUG", "ExitLevel: calling ClientEndServerFrames");
 	ClientEndServerFrames();
 
+	MuffModeLog("DEBUG", "ExitLevel: ClientEndServerFrames done, checking Duel_RemoveLoser");
 	// if we are running a duel, kick the loser to queue,
 	// which will automatically grab the next queued player and restart
 	if (deathmatch->integer && GT(GT_DUEL))
@@ -3844,6 +3855,7 @@ void ExitLevel() {
 	if (GT(GT_RR) && level.num_playing_clients > 1 && (!level.num_playing_red || !level.num_playing_blue))
 		TeamShuffle();
 
+	MuffModeLog("DEBUG", "ExitLevel: issuing gamemap command for '%s'", level.changemap);
 	if (map_len > (6 + start_offset) &&
 		!Q_strncasecmp(level.changemap + start_offset, "victor", 6) &&
 		!Q_strncasecmp(level.changemap + map_len - 4, ".pcx", 4))
@@ -3851,6 +3863,7 @@ void ExitLevel() {
 	else
 		gi.AddCommandString(G_Fmt("gamemap \"{}\"\n", level.changemap).data());
 
+	MuffModeLog("DEBUG", "ExitLevel: complete");
 	level.changemap = nullptr;
 }
 

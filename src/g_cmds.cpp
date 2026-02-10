@@ -3208,6 +3208,9 @@ void TransitionVoteState(VoteState new_state) {
 		case VoteState::PASSED:
 			level.vote_state.execute_time = level.time + 3_sec;
 			break;
+		case VoteState::FAILED:
+			level.vote_state.caller = nullptr;
+			break;
 		default:
 			break;
 	}
@@ -3236,8 +3239,11 @@ void Vote_Passed() {
 		return;
 	}
 
+	MuffModeLog("DEBUG", "Vote_Passed: executing command '%s'", level.vote_state.command->name);
 	level.vote_state.command->func();
+	MuffModeLog("DEBUG", "Vote_Passed: command executed, transitioning to COMPLETE");
 	TransitionVoteState(VoteState::COMPLETE);
+	MuffModeLog("DEBUG", "Vote_Passed: done");
 }
 
 /*

@@ -262,9 +262,7 @@ of the parameters
 */
 // Server command to change to first map in g_map_list after gametype config executes
 static void SVCmd_GametypeChangeMapFirst_f() {
-	// This executes AFTER the gametype config has run and set the new g_map_list
-	// Extract the first map from g_map_list and change to it
-	
+	// This executes AFTER the gametype config and shuffle_maplist have run
 	const char *first_map = nullptr;
 	
 	// Try to get first map from g_map_list (rotation maps)
@@ -272,7 +270,7 @@ static void SVCmd_GametypeChangeMapFirst_f() {
 		const char *mlist = g_map_list->string;
 		char *token;
 		
-		// Get first token from map list
+		// Get first token from map list (may be shuffled)
 		if ((token = COM_Parse(&mlist)) && *token) {
 			first_map = token;
 			MuffModeLog("GAMETYPE", "SVCmd_GametypeChangeMapFirst_f: Found map '%s' from g_map_list", first_map);
@@ -319,6 +317,8 @@ void ServerCommand() {
 		SVCmd_NextMap_f();
 	else if (Q_strcasecmp(cmd, "gt_changemap_first") == 0)
 		SVCmd_GametypeChangeMapFirst_f();
+	else if (Q_strcasecmp(cmd, "shuffle_maplist") == 0)
+		G_ShuffleMapListOnce();
 	else
 		gi.LocClient_Print(nullptr, PRINT_HIGH, "Unknown server command \"{}\"\n", cmd);
 }

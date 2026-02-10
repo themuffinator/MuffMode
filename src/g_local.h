@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.55";
+constexpr const char *GAMEMOD_VERSION = "0.21.59";
 
 //==================================================================
 
@@ -3216,6 +3216,7 @@ gentity_t *CreateTargetChangeLevel(const char *map);
 bool InAMatch();
 void ChangeGametype(gametype_t gt);
 void GT_Changes();
+void G_ShuffleMapListOnce();
 void SpawnEntities(const char *mapname, const char *entities, const char *spawnpoint);
 void G_LoadMOTD();
 
