@@ -1,6 +1,7 @@
 // Copyright (c) ZeniMax Media Inc.
 // Licensed under the GNU General Public License 2.0.
 #include "g_local.h"
+#include "g_debug_log.h"
 #include "monsters/m_player.h"
 
 #include <assert.h>
@@ -1113,7 +1114,7 @@ void G_Menu_CallVote_FriendlyFire(gentity_t *ent, menu_hnd_t *p) {
 }
 
 static void G_Menu_CallVote(gentity_t *ent, menu_hnd_t *p) {
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+	if (!ClientCanVote(ent->client)) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
 		return;
 	}
@@ -1181,6 +1182,9 @@ const menu_t votemenu[] = {
 };
 
 static void G_Menu_Vote_Update(gentity_t *ent) {
+	int ci = ent->client ? (int)(ent->client - game.clients) : -1;
+	MuffModeLog("DEBUG", "G_Menu_Vote_Update: enter for client %d, menu=%p", ci, (void*)ent->client->menu);
+
 	if (!Vote_Menu_Active(ent)) {
 		P_Menu_Close(ent);
 		return;
@@ -1194,11 +1198,15 @@ static void G_Menu_Vote_Update(gentity_t *ent) {
 	}
 
 	menu_t *entries = ent->client->menu->entries;
+	MuffModeLog("DEBUG", "G_Menu_Vote_Update: entries=%p, caller=%p, command=%p",
+	           (void*)entries, (void*)level.vote_state.caller, (void*)level.vote_state.command);
+
 	int i = 2;
 	if (!level.vote_state.caller) {
 		P_Menu_Close(ent);
 		return;
 	}
+	MuffModeLog("DEBUG", "G_Menu_Vote_Update: writing caller name '%s'", level.vote_state.caller->resp.netname);
 	Q_strlcpy(entries[i].text, G_Fmt("{} called a vote:", level.vote_state.caller->resp.netname).data(), sizeof(entries[i].text));
 	
 	i = 4;
@@ -1206,6 +1214,8 @@ static void G_Menu_Vote_Update(gentity_t *ent) {
 		P_Menu_Close(ent);
 		return;
 	}
+	MuffModeLog("DEBUG", "G_Menu_Vote_Update: writing command '%s' arg '%s' (arg_ptr=%p)",
+	           level.vote_state.command->name, level.vote_state.arg.c_str(), (void*)level.vote_state.arg.c_str());
 	Q_strlcpy(entries[i].text, G_Fmt("{} {}", level.vote_state.command->name, level.vote_state.arg).data(), sizeof(entries[i].text));
 
 	if (level.vote_state.start_time + 3_sec > level.time) {

@@ -165,7 +165,6 @@ cvar_t *g_ladder_steps;
 cvar_t *g_lag_compensation;
 cvar_t *g_map_list;
 cvar_t *g_map_list_shuffle;
-cvar_t *g_map_list_shuffle_once;
 cvar_t *g_map_pool;
 cvar_t *g_votable_gametypes;
 cvar_t *g_votable_rulesets;
@@ -735,9 +734,11 @@ void ChangeGametype(gametype_t gt) {
 		// This ensures cfg runs on gametype change, not on every map load
 		if (g_gametype_cfg->integer && deathmatch->integer) {
 			gi.AddCommandString(G_Fmt("exec gt-{}.cfg\n", gt_short_name_upper[(int)gt]).data());
-			// Shuffle the map list after the config has set it (runs after exec completes)
-			gi.AddCommandString("sv shuffle_maplist\n");
 		}
+
+		// Reset shuffle flag so the map list gets reshuffled for the new gametype
+		extern bool g_map_list_shuffled;
+		g_map_list_shuffled = false;
 		
 		// Update tracking vars to prevent GT_Changes() from triggering a redundant reload
 		// when Vote_Pass_Gametype() has already handled the map change properly
@@ -900,16 +901,9 @@ static void PreInitGame() {
 	InitGametype();
 }
 
-/*
-============
-G_ShuffleMapListOnce
-
-Shuffle the map list if g_map_list_shuffle_once is enabled.
-Called on initial server startup and on gametype change.
-Forward declaration.
-============
-*/
-void G_ShuffleMapListOnce();
+// Tracks whether the map list has been shuffled for the current gametype session.
+// Reset by ChangeGametype() so the list gets reshuffled on gametype change.
+bool g_map_list_shuffled = false;
 
 /*
 ============
@@ -1096,7 +1090,6 @@ static void InitGame() {
 	g_lag_compensation = gi.cvar("g_lag_compensation", "1", CVAR_NOFLAGS);
 	g_map_list = gi.cvar("g_map_list", "", CVAR_NOFLAGS);
 	g_map_list_shuffle = gi.cvar("g_map_list_shuffle", "1", CVAR_NOFLAGS);
-	g_map_list_shuffle_once = gi.cvar("g_map_list_shuffle_once", "0", CVAR_NOFLAGS);
 	g_map_pool = gi.cvar("g_map_pool", "", CVAR_NOFLAGS);
 	g_votable_gametypes = gi.cvar("g_votable_gametypes", "", CVAR_NOFLAGS);
 	g_votable_rulesets = gi.cvar("g_votable_rulesets", "", CVAR_NOFLAGS);
@@ -1213,6 +1206,17 @@ static void InitGame() {
 
 	ClearVote();
 
+	MuffModeLog("DEBUG", "InitGame: vote state after ClearVote: state=%d, caller=%p, command=%p, arg_empty=%d",
+	           (int)level.vote_state.state, (void*)level.vote_state.caller,
+	           (void*)level.vote_state.command, (int)level.vote_state.arg.empty());
+
+	// Dump client menu pointers to detect stale pointers after map load
+	for (size_t i = 0; i < game.maxclients; i++) {
+		if (game.clients[i].menu)
+			MuffModeLog("DEBUG", "InitGame: WARNING client %d has stale menu pointer %p after map load",
+			           (int)i, (void*)game.clients[i].menu);
+	}
+
 	level.total_player_deaths = 0;
 
 	gt_teamplay = teamplay->modified_count;
@@ -1231,9 +1235,9 @@ static void InitGame() {
 	// when gametype actually changes, not on every map load. This prevents
 	// cfg files from overriding player votes and map progression.
 
-	// Note: Map list shuffling is handled by ChangeGametype() which queues
-	// "sv shuffle_maplist" after the gametype config exec. This ensures the
-	// shuffle happens after the config has set the new g_map_list.
+	// Note: Map list shuffling is handled lazily in Match_End().
+	// ChangeGametype() resets the g_map_list_shuffled flag so the list
+	// gets reshuffled when the next match ends.
 }
 
 //===================================================================
@@ -2354,6 +2358,10 @@ static void UpdateActiveVote() {
 	if (level.time - level.vote_state.start_time < 1_sec)
 		return;
 
+	MuffModeLog("DEBUG", "UpdateActiveVote: checking vote (state=%d, caller=%p, command=%p, arg_ptr=%p)",
+	           (int)level.vote_state.state, (void*)level.vote_state.caller,
+	           (void*)level.vote_state.command, (void*)level.vote_state.arg.c_str());
+
 	if (level.time - level.vote_state.start_time >= 30_sec) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote timed out.\n");
 		AnnouncerSound(world, "vote_failed", nullptr, false);
@@ -2368,7 +2376,7 @@ static void UpdateActiveVote() {
 	for (auto ec : active_clients()) {
 		if (ec->client->sess.is_a_bot)
 			continue;
-		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+		if (!ClientCanVote(ec->client))
 			continue;
 		level.vote_state.num_eligible++;
 		if (ec->client->pers.voted == 1)
@@ -2378,6 +2386,11 @@ static void UpdateActiveVote() {
 	}
 
 	int halfpoint = level.vote_state.num_eligible / 2;
+
+	// Guard: if no eligible voters found, don't instantly pass/fail - wait for timeout
+	// This prevents 0 >= 0 from triggering an instant fail
+	if (level.vote_state.num_eligible == 0)
+		return;
 
 	if (level.vote_state.yes_votes > halfpoint) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Vote passed.\n");
@@ -2393,6 +2406,10 @@ static void UpdateActiveVote() {
 static void CheckVote(void) {
 	if (!deathmatch->integer)
 		return;
+
+	if (level.vote_state.state != VoteState::IDLE)
+		MuffModeLog("DEBUG", "CheckVote: state=%d, caller=%p, command=%p",
+		           (int)level.vote_state.state, (void*)level.vote_state.caller, (void*)level.vote_state.command);
 
 	switch (level.vote_state.state) {
 		case VoteState::IDLE:
@@ -2736,7 +2753,7 @@ void CalculateRanks() {
 		level.num_connected_clients++;
 
 		if (!ClientIsPlaying(cl)) {
-			if (g_allow_spec_vote->integer)
+			if (ClientCanVote(cl))
 				level.num_voting_clients++;
 			continue;
 		}
@@ -3182,26 +3199,29 @@ inline std::vector<std::string> str_split(const std::string_view &str, char by) 
 
 /*
 =================
-G_ShuffleMapListOnce
+G_ShuffleMapList
 
-Shuffle the map list if g_map_list_shuffle_once is enabled.
-Called on initial server startup and on gametype change.
+Shuffle the map list in place, avoiding the current map at the front.
 =================
 */
-void G_ShuffleMapListOnce() {
-	if (!g_map_list_shuffle_once->integer || !*g_map_list->string)
+void G_ShuffleMapList() {
+	if (!*g_map_list->string)
 		return;
 
 	auto values = str_split(g_map_list->string, ' ');
-	
+
 	if (values.size() <= 1)
-		return; // Nothing to shuffle
+		return;
 
 	std::shuffle(values.begin(), values.end(), mt_rand);
-	
+
+	// if the current map ended up at the front, push it to the end
+	if (values[0] == level.mapname)
+		std::swap(values[0], values[values.size() - 1]);
+
 	gi.cvar_forceset("g_map_list", fmt::format("{}", join_strings(values, " ")).data());
-	
-	gi.Com_PrintFmt("Map list shuffled once: {}\n", g_map_list->string);
+
+	gi.Com_PrintFmt("Map list shuffled: {}\n", g_map_list->string);
 }
 
 /*
@@ -3256,29 +3276,23 @@ void Match_End() {
 						BeginIntermission(CreateTargetChangeLevel(level.mapname));
 						return;
 					} else {
-						// [Paril-KEX] re-shuffle if necessary (skip if g_map_list_shuffle_once is enabled)
-						if (g_map_list_shuffle->integer && !g_map_list_shuffle_once->integer) {
-							auto values = str_split(g_map_list->string, ' ');
-
-							if (values.size() == 1) {
-								// meh
-								BeginIntermission(CreateTargetChangeLevel(level.mapname));
-								return;
-							}
-
-							std::shuffle(values.begin(), values.end(), mt_rand);
-
-							// if the current map is the map at the front, push it to the end
-							if (values[0] == level.mapname)
-								std::swap(values[0], values[values.size() - 1]);
-
-							gi.cvar_forceset("g_map_list", fmt::format("{}", join_strings(values, " ")).data());
-
-							BeginIntermission(CreateTargetChangeLevel(values[0].c_str()));
-							return;
+						// End of list wrap-around: shuffle if enabled
+						// g_map_list_shuffle 1 = shuffle every wrap-around
+						// g_map_list_shuffle 2 = shuffle once per gametype (lazy)
+						if (g_map_list_shuffle->integer == 1) {
+							G_ShuffleMapList();
+						} else if (g_map_list_shuffle->integer == 2 && !g_map_list_shuffled) {
+							G_ShuffleMapList();
+							g_map_list_shuffled = true;
 						}
 
-						BeginIntermission(CreateTargetChangeLevel(first_map));
+						// Re-read first map from (possibly shuffled) list
+						const char *reshuffled_str = g_map_list->string;
+						char *reshuffled_first = COM_ParseEx(&reshuffled_str, " ");
+						if (reshuffled_first && *reshuffled_first)
+							BeginIntermission(CreateTargetChangeLevel(reshuffled_first));
+						else
+							BeginIntermission(CreateTargetChangeLevel(first_map));
 						return;
 					}
 				} else {

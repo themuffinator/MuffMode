@@ -262,15 +262,26 @@ of the parameters
 */
 // Server command to change to first map in g_map_list after gametype config executes
 static void SVCmd_GametypeChangeMapFirst_f() {
-	// This executes AFTER the gametype config and shuffle_maplist have run
+	MuffModeLog("DEBUG", "SVCmd_GametypeChangeMapFirst_f: enter, g_map_list='%s', g_map_list_shuffle=%d",
+	           g_map_list->string, g_map_list_shuffle->integer);
+
+	// This executes AFTER the gametype config has set the new g_map_list
+	// Shuffle the list if shuffle is enabled (mode 1 or 2)
+	if (g_map_list_shuffle->integer >= 1) {
+		G_ShuffleMapList();
+		if (g_map_list_shuffle->integer == 2) {
+			extern bool g_map_list_shuffled;
+			g_map_list_shuffled = true;
+		}
+	}
+
 	const char *first_map = nullptr;
 	
-	// Try to get first map from g_map_list (rotation maps)
+	// Try to get first map from g_map_list (now shuffled if enabled)
 	if (g_map_list->string[0]) {
 		const char *mlist = g_map_list->string;
 		char *token;
 		
-		// Get first token from map list (may be shuffled)
 		if ((token = COM_Parse(&mlist)) && *token) {
 			first_map = token;
 			MuffModeLog("GAMETYPE", "SVCmd_GametypeChangeMapFirst_f: Found map '%s' from g_map_list", first_map);
@@ -290,14 +301,12 @@ static void SVCmd_GametypeChangeMapFirst_f() {
 		return;
 	}
 	
-	Q_strlcpy(level.nextmap, first_map, sizeof(level.nextmap));
-	level.nextmap[sizeof(level.nextmap) - 1] = '\0';
-	level.changemap = level.nextmap;
+	MuffModeLog("GAMETYPE", "Gametype change complete, loading map: %s", first_map);
 	
-	MuffModeLog("GAMETYPE", "Gametype change complete, loading map: %s", level.nextmap);
-	
-	// Use proper exit flow
-	ExitLevel();
+	// Issue gamemap directly instead of ExitLevel() — ExitLevel does too much
+	// (screenshots, ClientEndServerFrames, Duel_RemoveLoser) that assumes
+	// intermission context and causes crashes when called outside normal match flow.
+	gi.AddCommandString(G_Fmt("gamemap \"{}\"\n", first_map).data());
 }
 
 void ServerCommand() {
@@ -317,8 +326,6 @@ void ServerCommand() {
 		SVCmd_NextMap_f();
 	else if (Q_strcasecmp(cmd, "gt_changemap_first") == 0)
 		SVCmd_GametypeChangeMapFirst_f();
-	else if (Q_strcasecmp(cmd, "shuffle_maplist") == 0)
-		G_ShuffleMapListOnce();
 	else
 		gi.LocClient_Print(nullptr, PRINT_HIGH, "Unknown server command \"{}\"\n", cmd);
 }

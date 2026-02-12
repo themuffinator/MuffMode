@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.59";
+constexpr const char *GAMEMOD_VERSION = "0.21.65";
 
 //==================================================================
 
@@ -2489,7 +2489,6 @@ extern cvar_t *g_ladder_steps;
 extern cvar_t *g_lag_compensation;
 extern cvar_t *g_map_list;
 extern cvar_t *g_map_list_shuffle;
-extern cvar_t *g_map_list_shuffle_once;
 extern cvar_t *g_map_pool;
 extern cvar_t *g_votable_gametypes;
 extern cvar_t *g_votable_rulesets;
@@ -3216,7 +3215,7 @@ gentity_t *CreateTargetChangeLevel(const char *map);
 bool InAMatch();
 void ChangeGametype(gametype_t gt);
 void GT_Changes();
-void G_ShuffleMapListOnce();
+void G_ShuffleMapList();
 void SpawnEntities(const char *mapname, const char *entities, const char *spawnpoint);
 void G_LoadMOTD();
 
@@ -3316,6 +3315,7 @@ constexpr spawnflags_t SPAWNFLAG_LANDMARK_KEEP_Z = 1_spawnflag;
 }
 
 bool ClientIsPlaying(gclient_t *cl);
+bool ClientCanVote(gclient_t *cl);
 
 #include "p_menu.h"
 //============================================================================

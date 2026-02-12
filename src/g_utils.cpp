@@ -3,6 +3,7 @@
 // g_utils.c -- misc utility functions for game module
 
 #include "g_local.h"
+#include "g_debug_log.h"
 #include <cerrno>
 
 /*
@@ -1147,21 +1148,31 @@ const char *stime() {
 }
 
 void AnnouncerSound(gentity_t *ent, const char *announcer_sound, const char *backup_sound, bool use_backup) {
+	MuffModeLog("DEBUG", "AnnouncerSound: enter (announcer=%s, backup=%s, use_backup=%d)",
+	           announcer_sound ? announcer_sound : "(null)", backup_sound ? backup_sound : "(null)", (int)use_backup);
 	for (auto ec : active_clients()) {
 		if (ent == world || ent == ec || (!ClientIsPlaying(ec->client) && ec->client->follow_target == ent)) {
 			if (ec->client->sess.is_a_bot)
 				continue;
+			int ci = (int)(ec->client - game.clients);
+			MuffModeLog("DEBUG", "AnnouncerSound: processing client %d, use_expanded=%d",
+			           ci, (int)ec->client->sess.pc.use_expanded);
 			if (!ec->client->sess.pc.use_expanded || (announcer_sound == nullptr && use_backup)) {
-				if (backup_sound)
+				if (backup_sound) {
+					MuffModeLog("DEBUG", "AnnouncerSound: client %d playing backup sound '%s'", ci, backup_sound);
 					gi.local_sound(ec, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(backup_sound), 1, ATTN_NONE, 0);
+				}
 				continue;
 			}
 			//gi.local_sound(ec, CHAN_AUTO | CHAN_RELIABLE, gi.soundindex(announcer_sound), 1, ATTN_NONE, 0);
 			
-			if (ec->client->sess.pc.use_expanded && announcer_sound)
+			if (ec->client->sess.pc.use_expanded && announcer_sound) {
+				MuffModeLog("DEBUG", "AnnouncerSound: client %d playing expanded sound '%s'", ci, announcer_sound);
 				gi.local_sound(ec, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(G_Fmt("vo_evil/{}.wav", announcer_sound).data()), 1, ATTN_NONE, 0);
+			}
 		}
 	}
+	MuffModeLog("DEBUG", "AnnouncerSound: done");
 	//if (announcer_sound && ent == world)
 	//	gi.positioned_sound(world->s.origin, world, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundindex(G_Fmt("vo_evil/{}.wav", announcer_sound).data()), 1, ATTN_NONE, 0);
 }

@@ -3198,6 +3198,32 @@ bool ClientIsPlaying(gclient_t *cl) {
 }
 
 /*
+=================
+ClientCanVote
+
+Returns true if the client is eligible to participate in votes.
+This includes active players and duel-queued players (who are
+technically spectators but are active participants).
+=================
+*/
+bool ClientCanVote(gclient_t *cl) {
+	if (!cl) return false;
+
+	if (ClientIsPlaying(cl))
+		return true;
+
+	// Duel-queued players should always be able to vote
+	if (GT(GT_DUEL) && cl->sess.duel_queued)
+		return true;
+
+	// Spectators can vote if g_allow_spec_vote is enabled
+	if (g_allow_spec_vote->integer)
+		return true;
+
+	return false;
+}
+
+/*
 ===========
 ClientBegin
 
@@ -3754,6 +3780,10 @@ bool ClientConnect(gentity_t *ent, char *userinfo, const char *social_id, bool i
 			Q_strlcat(newname, oldname, sizeof(newname));
 			gi.Info_SetValueForKey(userinfo, "name", newname);
 		}
+	} else {
+		// Clear bot flag for human clients - sess persists across map loads (TAG_GAME),
+		// so if a bot previously occupied this slot, is_a_bot would still be true
+		ent->client->sess.is_a_bot = false;
 	}
 
 	Q_strlcpy(ent->client->pers.social_id, social_id, sizeof(ent->client->pers.social_id));

@@ -1,6 +1,7 @@
 // Copyright (c) ZeniMax Media Inc.
 // Licensed under the GNU General Public License 2.0.
 #include "g_local.h"
+#include "g_debug_log.h"
 
 /*
 ============
@@ -26,6 +27,10 @@ menu_hnd_t *P_Menu_Open(gentity_t *ent, const menu_t *entries, int cur, int num,
 
 	if (!ent->client)
 		return nullptr;
+
+	int ci = (int)(ent->client - game.clients);
+	MuffModeLog("DEBUG", "P_Menu_Open: client %d, existing menu=%p, inmenu=%d, num_entries=%d",
+	           ci, (void*)ent->client->menu, (int)ent->client->inmenu, num);
 
 	if (ent->client->menu) {
 		gi.Com_Print("Warning: client already has a menu.\n");
@@ -62,12 +67,18 @@ menu_hnd_t *P_Menu_Open(gentity_t *ent, const menu_t *entries, int cur, int num,
 	ent->client->menu = hnd;
 	ent->client->ps.stats[STAT_SHOW_STATUSBAR] = 0;
 
+	MuffModeLog("DEBUG", "P_Menu_Open: client %d, new menu=%p, entries=%p, calling UpdateFunc=%p",
+	           ci, (void*)hnd, (void*)hnd->entries, (void*)UpdateFunc);
+
 	if (UpdateFunc)
 		UpdateFunc(ent);
 
+	MuffModeLog("DEBUG", "P_Menu_Open: client %d, UpdateFunc done, calling P_Menu_Do_Update", ci);
 	P_Menu_Do_Update(ent);
+	MuffModeLog("DEBUG", "P_Menu_Open: client %d, calling unicast", ci);
 	gi.unicast(ent, true);
 
+	MuffModeLog("DEBUG", "P_Menu_Open: client %d complete", ci);
 	return hnd;
 }
 
@@ -77,7 +88,10 @@ void P_Menu_Close(gentity_t *ent) {
 	if (!ent->client->menu)
 		return;
 
+	int ci = (int)(ent->client - game.clients);
 	hnd = ent->client->menu;
+	MuffModeLog("DEBUG", "P_Menu_Close: client %d, menu=%p, entries=%p",
+	           ci, (void*)hnd, (void*)hnd->entries);
 	gi.TagFree(hnd->entries);
 	if (hnd->arg)
 		gi.TagFree(hnd->arg);
@@ -106,12 +120,16 @@ void P_Menu_Do_Update(gentity_t *ent) {
 	const char	*t;
 	bool		alt = false;
 
+	int ci = ent->client ? (int)(ent->client - game.clients) : -1;
+
 	if (!ent->client->menu) {
 		gi.Com_Print("Warning: ent has no menu\n");
 		return;
 	}
 
 	hnd = ent->client->menu;
+	MuffModeLog("DEBUG", "P_Menu_Do_Update: client %d, menu=%p, entries=%p, num=%d, UpdateFunc=%p",
+	           ci, (void*)hnd, (void*)hnd->entries, hnd->num, (void*)hnd->UpdateFunc);
 
 	if (hnd->UpdateFunc)
 		hnd->UpdateFunc(ent);

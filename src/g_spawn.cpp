@@ -1024,6 +1024,7 @@ static const char *ED_ParseEntity(const char *data, gentity_t *ent) {
 	bool  init;
 	char  keyname[256];
 	const char *com_token;
+	char  last_keyname[256] = "";
 
 	init = false;
 	st = {};
@@ -1034,15 +1035,22 @@ static const char *ED_ParseEntity(const char *data, gentity_t *ent) {
 		com_token = COM_Parse(&data);
 		if (com_token[0] == '}')
 			break;
-		if (!data)
+		if (!data) {
+			MuffModeLog("DEBUG", "ED_ParseEntity: EOF parsing key, last_key='%s', ent classname='%s'",
+			           last_keyname, ent->classname ? ent->classname : "(null)");
 			gi.Com_Error("ED_ParseEntity: EOF without closing brace");
+		}
 
 		Q_strlcpy(keyname, com_token, sizeof(keyname));
+		Q_strlcpy(last_keyname, keyname, sizeof(last_keyname));
 
 		// parse value
 		com_token = COM_Parse(&data);
-		if (!data)
+		if (!data) {
+			MuffModeLog("DEBUG", "ED_ParseEntity: EOF parsing value for key='%s', ent classname='%s'",
+			           keyname, ent->classname ? ent->classname : "(null)");
 			gi.Com_Error("ED_ParseEntity: EOF without closing brace");
+		}
 
 		if (com_token[0] == '}')
 			gi.Com_Error("ED_ParseEntity: closing brace without data");
@@ -1766,6 +1774,10 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 			//gi.Com_PrintFmt("{}: Entities override file not saved as file already exists: \"{}\"\n", __FUNCTION__, name);
 		}
 	}
+	// Save entity string into a std::string BEFORE FreeTags, because if an .ent
+	// override file was loaded, 'entities' points to TAG_LEVEL memory that will
+	// be freed. This copy ensures we have a safe copy for parsing later.
+	std::string saved_entstring(entities);
 	level.entstring = entities;
 //#endif
 	//ParseWorldEntityString(mapname, RS(RS_Q3A));
@@ -1781,14 +1793,36 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 
 	SaveClientData();
 
+	// Dump client menu pointers BEFORE FreeTags to detect what will become stale
+	for (size_t dbg_i = 0; dbg_i < game.maxclients; dbg_i++) {
+		if (game.clients[dbg_i].menu)
+			MuffModeLog("DEBUG", "SpawnEntities: client %d has menu=%p BEFORE FreeTags",
+			           (int)dbg_i, (void*)game.clients[dbg_i].menu);
+	}
+
 	gi.FreeTags(TAG_LEVEL);
+
+	// After FreeTags, any TAG_LEVEL pointers in game.clients are now dangling.
+	// Null them out to prevent use-after-free.
+	for (size_t dbg_i = 0; dbg_i < game.maxclients; dbg_i++) {
+		if (game.clients[dbg_i].menu) {
+			MuffModeLog("DEBUG", "SpawnEntities: nulling stale menu pointer for client %d (was %p)",
+			           (int)dbg_i, (void*)game.clients[dbg_i].menu);
+			game.clients[dbg_i].menu = nullptr;
+			game.clients[dbg_i].inmenu = false;
+		}
+	}
+
+	// After FreeTags, 'entities' may be a dangling pointer if it was from an .ent file.
+	// Redirect it to our saved copy.
+	entities = saved_entstring.c_str();
 
 	memset(&level, 0, sizeof(level));
 	
 	// CRITICAL: Reinitialize all C++ objects after memset
 	// memset corrupts C++ objects like std::string, so we must reconstruct them
 	new (&level.vote_state) VoteStateData();
-	new (&level.entstring) std::string();
+	new (&level.entstring) std::string(saved_entstring);
 	new (&level.match_id) std::string();
 	
 	memset(g_entities, 0, game.maxentities * sizeof(g_entities[0]));
@@ -1828,6 +1862,18 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 	const char *com_token;
 	//const char *entities = level.entstring.c_str();
 
+	// Log entity string state before parsing
+	size_t ent_str_len = entities ? strlen(entities) : 0;
+	MuffModeLog("DEBUG", "SpawnEntities: entity string ptr=%p, len=%zu, first_32='%.32s'",
+	           (void*)entities, ent_str_len, entities ? entities : "(null)");
+	if (ent_str_len > 0) {
+		// Log last 64 chars to see if string is truncated
+		size_t tail_start = ent_str_len > 64 ? ent_str_len - 64 : 0;
+		MuffModeLog("DEBUG", "SpawnEntities: entity string tail='%s'", entities + tail_start);
+	}
+
+	int ent_count = 0;
+
 	// parse entities
 	while (1) {
 		// parse the opening brace
@@ -1837,6 +1883,7 @@ void SpawnEntities(const char *mapname, const char *entities, const char *spawnp
 		if (com_token[0] != '{')
 			gi.Com_ErrorFmt("{}: Found \"{}\" when expecting {{ in entity string.\n", __FUNCTION__, com_token);
 
+		ent_count++;
 		if (!ent)
 			ent = g_entities;
 		else

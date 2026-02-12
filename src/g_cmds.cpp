@@ -2453,6 +2453,10 @@ static bool Vote_Val_None(gentity_t *ent) {
 }
 
 void Vote_Pass_Map() {
+	MuffModeLog("DEBUG", "Vote_Pass_Map: enter, arg='%s' (len=%d, ptr=%p)",
+	           level.vote_state.arg.c_str(), (int)level.vote_state.arg.length(),
+	           (void*)level.vote_state.arg.c_str());
+
 	if (level.vote_state.arg.empty() || level.vote_state.arg.length() >= sizeof(level.nextmap)) {
 		gi.LocBroadcast_Print(PRINT_HIGH, "Map vote failed: invalid map name.\n");
 		return;
@@ -2460,7 +2464,9 @@ void Vote_Pass_Map() {
 
 	Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
 	level.changemap = level.nextmap;
+	MuffModeLog("DEBUG", "Vote_Pass_Map: calling ExitLevel for map '%s'", level.nextmap);
 	ExitLevel();
+	MuffModeLog("DEBUG", "Vote_Pass_Map: ExitLevel returned");
 }
 
 // Helper function to validate a map name using two-tier system:
@@ -2554,16 +2560,22 @@ void Vote_Pass_RestartMatch() {
 
 void Vote_Pass_Gametype() {
 	gametype_t gt = GT_IndexFromString(level.vote_state.arg.data());
-	if (gt == GT_NONE)
+	MuffModeLog("DEBUG", "Vote_Pass_Gametype: enter, arg='%s', gt=%d", level.vote_state.arg.data(), (int)gt);
+	if (gt == GT_NONE) {
+		MuffModeLog("DEBUG", "Vote_Pass_Gametype: GT_NONE, aborting");
 		return;
+	}
 
 	// Change the gametype (this sets cvars and queues config exec)
+	MuffModeLog("DEBUG", "Vote_Pass_Gametype: calling ChangeGametype(%d)", (int)gt);
 	ChangeGametype(gt);
+	MuffModeLog("DEBUG", "Vote_Pass_Gametype: ChangeGametype returned, queuing sv gt_changemap_first");
 	
 	// Queue a special server command that will execute AFTER the gametype config
 	// This command will read the NEW g_map_list and change to the first map in it
 	// Note: "sv" prefix is required to invoke ServerCommand() handler
 	gi.AddCommandString("sv gt_changemap_first\n");
+	MuffModeLog("DEBUG", "Vote_Pass_Gametype: done");
 }
 
 // Helper function to check if a gametype is votable
@@ -3255,6 +3267,8 @@ static bool ValidVoteCommand(gentity_t *ent) {
 	if (!ent->client)
 		return false;
 
+	MuffModeLog("DEBUG", "ValidVoteCommand: enter, argv(1)=%s, argc=%d", gi.argv(1), gi.argc());
+
 	level.vote_state.command = nullptr;
 
 	vcmds_t *cc = FindVoteCmdByName(gi.argv(1));
@@ -3291,6 +3305,9 @@ static bool ValidVoteCommand(gentity_t *ent) {
 		return false;
 	}
 	level.vote_state.arg = raw_arg;
+	MuffModeLog("DEBUG", "ValidVoteCommand: success, cmd=%s, arg='%s' (len=%d, ptr=%p)",
+	           cc->name, level.vote_state.arg.c_str(), (int)level.vote_state.arg.length(),
+	           (void*)level.vote_state.arg.c_str());
 	return true;
 }
 
@@ -3320,7 +3337,7 @@ void VoteCommandStore(gentity_t *ent) {
 		return;
 	}
 
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+	if (!ClientCanVote(ent->client)) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
 		return;
 	}
@@ -3341,12 +3358,26 @@ void VoteCommandStore(gentity_t *ent) {
 	level.vote_state.yes_votes = 1;
 	level.vote_state.no_votes = 0;
 
-	// Count eligible voters (non-bot humans; spectators only if g_allow_spec_vote)
+	// Count eligible voters (non-bot humans who can vote)
+	// Diagnostic: iterate ALL client slots to reveal why clients may be invisible
 	level.vote_state.num_eligible = 0;
-	for (auto ec : active_clients()) {
+	MuffModeLog("DEBUG", "VoteEligibility: maxclients=%d, scanning all slots...", (int)game.maxclients);
+	for (uint32_t ve_i = 0; ve_i < (uint32_t)game.maxclients; ve_i++) {
+		gentity_t *ec = &g_entities[1 + ve_i];
+		bool has_client = ec->client != nullptr;
+		MuffModeLog("DEBUG", "VoteEligibility: slot %d, inuse=%d, client=%p, connected=%d, is_bot=%d, svflags_bot=%d, team=%d, duel_queued=%d, name='%s'",
+			(int)ve_i, (int)ec->inuse, (void*)ec->client,
+			has_client ? (int)ec->client->pers.connected : -1,
+			has_client ? (int)ec->client->sess.is_a_bot : -1,
+			(int)((ec->svflags & SVF_BOT) != 0),
+			has_client ? (int)ec->client->sess.team : -1,
+			has_client ? (int)ec->client->sess.duel_queued : -1,
+			has_client ? ec->client->resp.netname : "(no client)");
+		if (!ec->inuse || !has_client || !ec->client->pers.connected)
+			continue;
 		if (ec->client->sess.is_a_bot)
 			continue;
-		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+		if (!ClientCanVote(ec->client))
 			continue;
 		level.vote_state.num_eligible++;
 	}
@@ -3357,19 +3388,31 @@ void VoteCommandStore(gentity_t *ent) {
 	           ent->client->resp.netname,
 	           level.vote_state.num_eligible);
 
+	MuffModeLog("DEBUG", "VoteCommandStore: about to broadcast (arg_empty=%d, arg_len=%d, arg_ptr=%p, cmd_name=%s, netname=%s)",
+	           (int)level.vote_state.arg.empty(), (int)level.vote_state.arg.length(),
+	           (void*)level.vote_state.arg.c_str(), level.vote_state.command->name, ent->client->resp.netname);
+
 	// Broadcast
 	if (level.vote_state.arg.empty())
 		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{}\n", ent->client->resp.netname, level.vote_state.command->name);
 	else
 		gi.LocBroadcast_Print(PRINT_CENTER, "{} called a vote:\n{} {}\n", ent->client->resp.netname, level.vote_state.command->name, level.vote_state.arg.c_str());
 
+	MuffModeLog("DEBUG", "VoteCommandStore: broadcast done, resetting votes");
+
 	// Caller auto-votes yes, everyone else reset
 	for (auto ec : active_clients())
 		ec->client->pers.voted = ec == ent ? 1 : 0;
 
 	ent->client->pers.vote_count++;
+
+	MuffModeLog("DEBUG", "VoteCommandStore: votes reset, playing announcer sound");
 	AnnouncerSound(world, "vote_now", "misc/pc_up.wav", true);
+
+	MuffModeLog("DEBUG", "VoteCommandStore: announcer done, transitioning to ACTIVE");
 	TransitionVoteState(VoteState::ACTIVE);
+
+	MuffModeLog("DEBUG", "VoteCommandStore: state=ACTIVE, opening vote menus for non-callers");
 
 	// Open vote menu for eligible non-caller clients
 	for (auto ec : active_clients()) {
@@ -3377,8 +3420,12 @@ void VoteCommandStore(gentity_t *ent) {
 			continue;
 		if (ec->client == level.vote_state.caller)
 			continue;
-		if (!ClientIsPlaying(ec->client) && !g_allow_spec_vote->integer)
+		if (!ClientCanVote(ec->client))
 			continue;
+
+		int ci = (int)(ec->client - game.clients);
+		MuffModeLog("DEBUG", "VoteCommandStore: opening vote menu for client %d (%s), menu=%p, inmenu=%d",
+		           ci, ec->client->resp.netname, (void*)ec->client->menu, (int)ec->client->inmenu);
 
 		ec->client->showinventory = false;
 		ec->client->showhelp = false;
@@ -3387,7 +3434,11 @@ void VoteCommandStore(gentity_t *ent) {
 		ec->client->ps.stats[STAT_SHOW_STATUSBAR] = !ClientIsPlaying(e->client) ? 0 : 1;
 		P_Menu_Close(ec);
 		G_Menu_Vote_Open(ec);
+
+		MuffModeLog("DEBUG", "VoteCommandStore: vote menu opened for client %d", ci);
 	}
+
+	MuffModeLog("DEBUG", "VoteCommandStore: complete");
 }
 
 /*
@@ -3398,6 +3449,11 @@ Cmd_CallVote_f
 static void Cmd_CallVote_f(gentity_t *ent) {
 	if (!deathmatch->integer)
 		return;
+
+	MuffModeLog("DEBUG", "Cmd_CallVote_f: enter, ent=%p, client=%p, argc=%d",
+	           (void*)ent, (void*)ent->client, gi.argc());
+	for (int i = 0; i < gi.argc(); i++)
+		MuffModeLog("DEBUG", "Cmd_CallVote_f: argv(%d)=%s", i, gi.argv(i));
 
 	// formulate list of allowed voting commands
 	vcmds_t *cc = vote_cmds;
@@ -3435,7 +3491,7 @@ static void Cmd_CallVote_f(gentity_t *ent) {
 		return;
 	}
 
-	if (!g_allow_spec_vote->integer && !ClientIsPlaying(ent->client)) {
+	if (!ClientCanVote(ent->client)) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "You are not allowed to call a vote as a spectator.\n");
 		return;
 	}
@@ -3466,7 +3522,7 @@ static void Cmd_Vote_f(gentity_t *ent) {
 	if (!deathmatch->integer)
 		return;
 
-	if (!ClientIsPlaying(ent->client) && !g_allow_spec_vote->integer) {
+	if (!ClientCanVote(ent->client)) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Not allowed to vote as spectator.\n");
 		return;
 	}
