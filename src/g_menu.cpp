@@ -445,6 +445,8 @@ void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p);
 
 void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p);
+static void G_Menu_CallVote_Map_PrevPage(gentity_t *ent, menu_hnd_t *p);
+static void G_Menu_CallVote_Map_NextPage(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_ReturnToCallVote(gentity_t *ent, menu_hnd_t *p);
 
 const menu_t pmcallvotemenu[] = {
@@ -663,6 +665,12 @@ static void MenuVote_Initiate(gentity_t *ent, const char *cmd_name, const char *
 	VoteCommandStore(ent);
 }
 
+struct map_menu_page_t {
+	int offset;
+};
+
+static constexpr int MAPS_PER_PAGE = 12;
+
 void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 	char value[64];
 	if (!MenuVote_ReadSelection(ent, p, value, sizeof(value)))
@@ -676,11 +684,25 @@ void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p) {
 	MenuVote_Initiate(ent, "map", value);
 }
 
+static void G_Menu_CallVote_Map_PrevPage(gentity_t *ent, menu_hnd_t *p) {
+	map_menu_page_t *page = (map_menu_page_t *)p->arg;
+	if (page && page->offset > 0) {
+		page->offset -= MAPS_PER_PAGE;
+		if (page->offset < 0)
+			page->offset = 0;
+	}
+	P_Menu_Update(ent);
+}
+
+static void G_Menu_CallVote_Map_NextPage(gentity_t *ent, menu_hnd_t *p) {
+	map_menu_page_t *page = (map_menu_page_t *)p->arg;
+	if (page)
+		page->offset += MAPS_PER_PAGE;
+	P_Menu_Update(ent);
+}
+
 static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
-
-	// Set the title
-	Q_strlcpy(entries[0].text, "Choose a Map", sizeof(entries[0].text));
 
 	// Explicitly clear entry 1 (ensure it has no text and no SelectFunc)
 	entries[1].text[0] = '\0';
@@ -726,30 +748,62 @@ static void G_Menu_CallVote_Map_Update(gentity_t *ent) {
 		});
 	}
 
-	// Clear all entries first (entries 2-15, leaving 16 for return button)
-	for (int i = 2; i < 16; i++) {
+	// Pagination state
+	map_menu_page_t *page = (map_menu_page_t *)ent->client->menu->arg;
+	int offset = page ? page->offset : 0;
+	int total_maps = (int)values.size();
+
+	// Clamp offset
+	if (offset >= total_maps)
+		offset = (total_maps > 0) ? ((total_maps - 1) / MAPS_PER_PAGE) * MAPS_PER_PAGE : 0;
+	if (page)
+		page->offset = offset;
+
+	int total_pages = (total_maps + MAPS_PER_PAGE - 1) / MAPS_PER_PAGE;
+	if (total_pages < 1)
+		total_pages = 1;
+	int current_page = (offset / MAPS_PER_PAGE) + 1;
+
+	// Set the title with page indicator
+	if (total_pages > 1)
+		Q_strlcpy(entries[0].text, G_Fmt("Choose a Map ({}/{})", current_page, total_pages).data(), sizeof(entries[0].text));
+	else
+		Q_strlcpy(entries[0].text, "Choose a Map", sizeof(entries[0].text));
+
+	// Clear map entries (2-13), nav entries (14-15), and spacer (16)
+	for (int i = 2; i <= 16; i++) {
 		entries[i].SelectFunc = nullptr;
 		entries[i].text[0] = '\0';
 		entries[i].text_arg1[0] = '\0';
 	}
 
-	// Build list of maps (matching gametype menu pattern)
+	// Build list of maps for the current page
 	int menu_index = 2;
-	for (size_t i = 0; i < values.size() && menu_index < 16; i++) {
-		// Store original case in text_arg1 for later retrieval
+	for (int i = offset; i < total_maps && menu_index < (2 + MAPS_PER_PAGE); i++) {
 		Q_strlcpy(entries[menu_index].text_arg1, values[i].c_str(), sizeof(entries[menu_index].text_arg1));
-		
-		// Display map name in original case
 		Q_strlcpy(entries[menu_index].text, values[i].c_str(), sizeof(entries[menu_index].text));
 		entries[menu_index].SelectFunc = G_Menu_CallVote_Map_Selection;
-
 		menu_index++;
+	}
+
+	// Prev page nav (index 14)
+	if (offset > 0) {
+		Q_strlcpy(entries[14].text, "< Prev Page", sizeof(entries[14].text));
+		entries[14].SelectFunc = G_Menu_CallVote_Map_PrevPage;
+	}
+
+	// Next page nav (index 15)
+	if (offset + MAPS_PER_PAGE < total_maps) {
+		Q_strlcpy(entries[15].text, "> Next Page", sizeof(entries[15].text));
+		entries[15].SelectFunc = G_Menu_CallVote_Map_NextPage;
 	}
 }
 
 void G_Menu_CallVote_Map(gentity_t *ent, menu_hnd_t *p) {
 	P_Menu_Close(ent);
-	P_Menu_Open(ent, pmcallvotemenu_map, -1, sizeof(pmcallvotemenu_map) / sizeof(menu_t), nullptr, G_Menu_CallVote_Map_Update);
+	map_menu_page_t *page = (map_menu_page_t *)gi.TagMalloc(sizeof(map_menu_page_t), TAG_LEVEL);
+	page->offset = 0;
+	P_Menu_Open(ent, pmcallvotemenu_map, -1, sizeof(pmcallvotemenu_map) / sizeof(menu_t), page, G_Menu_CallVote_Map_Update);
 }
 
 void G_Menu_CallVote_NextMap(gentity_t *ent, menu_hnd_t *p) {
