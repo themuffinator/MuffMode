@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.67";
+constexpr const char *GAMEMOD_VERSION = "0.21.71";
 
 //==================================================================
 
@@ -1716,6 +1716,7 @@ struct level_locals_t {
 	int			count_living[TEAM_NUM_TEAMS];
 
 	bool		locked[TEAM_NUM_TEAMS];
+	gentity_t	*captain[TEAM_NUM_TEAMS];	// team captains (nullptr = no captain)
 
 	gtime_t		ctf_last_flag_capture;
 	team_t		ctf_last_capture_team;
@@ -2710,6 +2711,8 @@ const char *G_PlaceString(int rank);
 bool ItemSpawnsEnabled();
 bool loc_CanSee(gentity_t *targ, gentity_t *inflictor);
 bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, bool silent);
+void SetCaptain(team_t team, gentity_t *ent);
+void VacateCaptain(team_t team, gentity_t *leaving);
 const char *G_TimeString(const int msec, bool state);
 const char *G_TimeStringMs(const int msec, bool state);
 void BroadcastFriendlyMessage(team_t team, const char *msg);

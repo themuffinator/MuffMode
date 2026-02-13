@@ -25,6 +25,10 @@ struct cmds_t {
 	uint32_t	flags;
 };
 
+// forward declarations for captain system
+void SetCaptain(team_t team, gentity_t *ent);
+void VacateCaptain(team_t team, gentity_t *leaving);
+
 static void Cmd_Print_State(gentity_t *ent, bool on_state) {
 	const char *s = gi.argv(0);
 	if (s)
@@ -2147,6 +2151,12 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 
 	P_Menu_Close(ent);
 
+	// vacate captain if leaving a team
+	if ((old_team == TEAM_RED || old_team == TEAM_BLUE) && old_team != desired_team) {
+		if (level.captain[old_team] == ent)
+			VacateCaptain(old_team, ent);
+	}
+
 	// start as spectator
 	if (ent->movetype == MOVETYPE_NOCLIP)
 		Weapon_Grapple_DoReset(ent->client);
@@ -2185,6 +2195,10 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 
 		// free any followers
 		FreeClientFollowers(ent);
+
+		// auto-assign captain if team has none
+		if ((desired_team == TEAM_RED || desired_team == TEAM_BLUE) && !level.captain[desired_team])
+			SetCaptain(desired_team, ent);
 	}
 
 	ent->client->sess.initialised = true;
@@ -3651,19 +3665,169 @@ static void Cmd_FollowPowerup_f(gentity_t *ent) {
 
 /*
 =================
-Cmd_LockTeam_f
+SetCaptain
+
+Sets ent as captain of team. Pass nullptr to remove captain.
 =================
 */
-static void Cmd_LockTeam_f(gentity_t *ent) {
-	if (gi.argc() < 2) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [team]\n", gi.argv(0));
+void SetCaptain(team_t team, gentity_t *ent) {
+	level.captain[team] = ent;
+
+	if (ent) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "{} became captain of {}.\n",
+			ent->client->resp.netname, Teams_TeamName(team));
+	}
+}
+
+/*
+=================
+FindNewCaptain
+
+Finds the longest-tenured teammate to auto-promote as captain.
+Returns nullptr if no eligible player found.
+=================
+*/
+static gentity_t *FindNewCaptain(team_t team, gentity_t *exclude = nullptr) {
+	gentity_t *best = nullptr;
+	gtime_t earliest = {};
+
+	for (auto ec : active_clients()) {
+		if (ec == exclude)
+			continue;
+		if (ec->client->sess.team != team)
+			continue;
+		if (ec->svflags & SVF_BOT)
+			continue;
+		if (!best || ec->client->sess.team_join_time < earliest) {
+			best = ec;
+			earliest = ec->client->sess.team_join_time;
+		}
+	}
+
+	return best;
+}
+
+/*
+=================
+VacateCaptain
+
+Called when a captain leaves their team. Auto-promotes the
+longest-tenured teammate, or clears captain if team is empty.
+=================
+*/
+void VacateCaptain(team_t team, gentity_t *leaving) {
+	level.captain[team] = nullptr;
+
+	gentity_t *replacement = FindNewCaptain(team, leaving);
+	if (replacement)
+		SetCaptain(team, replacement);
+}
+
+/*
+=================
+IsCaptainOrAdmin
+
+Returns true if ent is captain of the given team, or is an admin.
+=================
+*/
+static bool IsCaptainOrAdmin(gentity_t *ent, team_t team) {
+	if (ent->client->sess.admin)
+		return true;
+	if (level.captain[team] == ent)
+		return true;
+	return false;
+}
+
+/*
+=================
+Cmd_Captain_f
+
+Usage:
+  captain          - claim captain (if none) or show current captain
+  captain <player> - transfer captain to a teammate (must be captain)
+=================
+*/
+static void Cmd_Captain_f(gentity_t *ent) {
+	if (!Teams()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Captain is only available in team modes.\n");
 		return;
 	}
 
-	team_t team = StringToTeamNum(gi.argv(1));
+	team_t team = ent->client->sess.team;
 
-	if (team == TEAM_NONE || team == TEAM_SPECTATOR) {
+	if (team != TEAM_RED && team != TEAM_BLUE) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You must be on a team to use this command.\n");
+		return;
+	}
+
+	if (gi.argc() == 1) {
+		if (level.captain[team] == ent) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "You are the captain of {}.\n", Teams_TeamName(team));
+		} else if (level.captain[team]) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "{} is the captain of {}.\n",
+				level.captain[team]->client->resp.netname, Teams_TeamName(team));
+		} else {
+			SetCaptain(team, ent);
+		}
+		return;
+	}
+
+	// transfer captain to another player
+	if (level.captain[team] != ent) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You must be captain to transfer it to another player.\n");
+		return;
+	}
+
+	gentity_t *target = ClientEntFromString(gi.args());
+
+	if (!target || !target->inuse || !target->client) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid player.\n");
+		return;
+	}
+
+	if (target == ent) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You can't transfer captain to yourself.\n");
+		return;
+	}
+
+	if (target->client->sess.team != team) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "{} is not on your team.\n", target->client->resp.netname);
+		return;
+	}
+
+	gi.LocClient_Print(target, PRINT_HIGH, "{} transferred captain status to you.\n",
+		ent->client->resp.netname);
+	SetCaptain(team, target);
+}
+
+/*
+=================
+Cmd_LockTeam_f
+
+Locks a team. Captains lock their own team; admins can specify a team.
+=================
+*/
+static void Cmd_LockTeam_f(gentity_t *ent) {
+	if (!Teams()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Team lock is only available in team modes.\n");
+		return;
+	}
+
+	team_t team;
+
+	if (ent->client->sess.admin && gi.argc() >= 2) {
+		team = StringToTeamNum(gi.argv(1));
+	} else {
+		team = ent->client->sess.team;
+	}
+
+	if (team != TEAM_RED && team != TEAM_BLUE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid team.\n");
+		return;
+	}
+
+	if (!IsCaptainOrAdmin(ent, team)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Only team captains or admins can lock teams.\n");
 		return;
 	}
 
@@ -3672,25 +3836,39 @@ static void Cmd_LockTeam_f(gentity_t *ent) {
 		return;
 	}
 
-	gi.LocBroadcast_Print(PRINT_HIGH, "[ADMIN]: {} has been locked.\n", Teams_TeamName(team));
 	level.locked[team] = true;
+	gi.LocBroadcast_Print(PRINT_HIGH, "{} has been locked.\n", Teams_TeamName(team));
+	P_Menu_Dirty();
 }
 
 /*
 =================
 Cmd_UnlockTeam_f
+
+Unlocks a team. Captains unlock their own team; admins can specify a team.
 =================
 */
 static void Cmd_UnlockTeam_f(gentity_t *ent) {
-	if (gi.argc() < 2) {
-		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [team]\n", gi.argv(0));
+	if (!Teams()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Team unlock is only available in team modes.\n");
 		return;
 	}
 
-	team_t team = StringToTeamNum(gi.argv(1));
+	team_t team;
 
-	if (team == TEAM_NONE || team == TEAM_SPECTATOR) {
+	if (ent->client->sess.admin && gi.argc() >= 2) {
+		team = StringToTeamNum(gi.argv(1));
+	} else {
+		team = ent->client->sess.team;
+	}
+
+	if (team != TEAM_RED && team != TEAM_BLUE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid team.\n");
+		return;
+	}
+
+	if (!IsCaptainOrAdmin(ent, team)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Only team captains or admins can unlock teams.\n");
 		return;
 	}
 
@@ -3699,8 +3877,9 @@ static void Cmd_UnlockTeam_f(gentity_t *ent) {
 		return;
 	}
 
-	gi.LocBroadcast_Print(PRINT_HIGH, "[ADMIN]: {} has been unlocked.\n", Teams_TeamName(team));
 	level.locked[team] = false;
+	gi.LocBroadcast_Print(PRINT_HIGH, "{} has been unlocked.\n", Teams_TeamName(team));
+	P_Menu_Dirty();
 }
 
 /*
@@ -4011,6 +4190,53 @@ static void Cmd_UnReadyAll_f(gentity_t *ent) {
 	UnReadyAll();
 
 	gi.Broadcast_Print(PRINT_HIGH, "[ADMIN]: Forced all players to NOT ready status\n");
+}
+
+/*
+=================
+Cmd_ReadyTeam_f
+
+Captain readies up all players on their team.
+=================
+*/
+static void Cmd_ReadyTeam_f(gentity_t *ent) {
+	if (!Teams()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "This command is only available in team modes.\n");
+		return;
+	}
+
+	if (!ReadyConditions(ent, true, false))
+		return;
+
+	team_t team = ent->client->sess.team;
+
+	if (team != TEAM_RED && team != TEAM_BLUE) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "You must be on a team to use this command.\n");
+		return;
+	}
+
+	if (!IsCaptainOrAdmin(ent, team)) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Only team captains or admins can ready the team.\n");
+		return;
+	}
+
+	int count = 0;
+	for (auto ec : active_clients()) {
+		if (!ClientIsPlaying(ec->client))
+			continue;
+		if (ec->client->sess.team != team)
+			continue;
+		if (!ec->client->resp.ready) {
+			ec->client->resp.ready = true;
+			count++;
+		}
+	}
+
+	if (count > 0)
+		gi.LocBroadcast_Print(PRINT_HIGH, "{} readied up {} ({} player{}).\n",
+			ent->client->resp.netname, Teams_TeamName(team), count, count > 1 ? "s" : "");
+	else
+		gi.LocClient_Print(ent, PRINT_HIGH, "All players on {} are already ready.\n", Teams_TeamName(team));
 }
 
 static void BroadcastReadyStatus(gentity_t *ent) {
@@ -4442,6 +4668,7 @@ cmds_t client_cmds[] = {
 	{"balance",			Cmd_BalanceTeams_f,		CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 	{"boot",			Cmd_Boot_f,				CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 	{"callvote",		Cmd_CallVote_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
+	{"captain",			Cmd_Captain_f,			CF_ALLOW_DEAD},
 	{"checkpoi",		Cmd_CheckPOI_f,			CF_ALLOW_SPEC | CF_CHEAT_PROTECT},
 	{"clear_ai_enemy",	Cmd_Clear_AI_Enemy_f,	CF_CHEAT_PROTECT},
 	{"cv",				Cmd_CallVote_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
@@ -4478,7 +4705,7 @@ cmds_t client_cmds[] = {
 	{"listentities",	Cmd_ListEntities_f,		CF_ALLOW_DEAD | CF_ALLOW_INT | CF_ALLOW_SPEC | CF_CHEAT_PROTECT},
 	{"listmonsters",	Cmd_ListMonsters_f,		CF_ALLOW_DEAD | CF_ALLOW_INT | CF_ALLOW_SPEC | CF_CHEAT_PROTECT},
 	{"loadmotd",		Cmd_LoadMotd_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
-	{"lockteam",		Cmd_LockTeam_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"lockteam",		Cmd_LockTeam_f,			CF_ALLOW_DEAD},
 	{"map_restart",		Cmd_MapRestart_f,		CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 	{"mapinfo",			Cmd_MapInfo_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
 	{"maplist",			Cmd_MapList_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
@@ -4495,6 +4722,7 @@ cmds_t client_cmds[] = {
 	{"putaway",			Cmd_PutAway_f,			CF_ALLOW_SPEC},	//spec for menu close
 	{"ready",			Cmd_Ready_f,			CF_ALLOW_DEAD},
 	{"readyall",		Cmd_ReadyAll_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"readyteam",		Cmd_ReadyTeam_f,		CF_ALLOW_DEAD},
 	{"readyup",			Cmd_ReadyUp_f,			CF_ALLOW_DEAD},
 	{"resetmatch",		Cmd_ResetMatch_f,		CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 	{"ruleset",			Cmd_Ruleset_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
@@ -4513,7 +4741,7 @@ cmds_t client_cmds[] = {
 	{"time-in",			Cmd_TimeIn_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
 	{"timer",			Cmd_Timer_f,			CF_ALLOW_SPEC | CF_ALLOW_DEAD},
 	{"unhook",			Cmd_UnHook_f,			CF_NONE},
-	{"unlockteam",		Cmd_UnlockTeam_f,		CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"unlockteam",		Cmd_UnlockTeam_f,		CF_ALLOW_DEAD},
 	{"unreadyall",		Cmd_UnReadyAll_f,		CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
 	{"use",				Cmd_Use_f,				CF_NONE},
 	{"use_index",		Cmd_Use_f,				CF_NONE},

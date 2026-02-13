@@ -1202,6 +1202,9 @@ static void InitGame() {
 	level.locked[TEAM_RED] = false;
 	level.locked[TEAM_BLUE] = false;
 
+	level.captain[TEAM_RED] = nullptr;
+	level.captain[TEAM_BLUE] = nullptr;
+
 	*level.weapon_count = { 0 };
 
 	ClearVote();

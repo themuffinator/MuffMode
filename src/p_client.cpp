@@ -3868,6 +3868,11 @@ void ClientDisconnect(gentity_t *ent) {
 	// free any followers
 	FreeClientFollowers(ent);
 
+	// vacate captain if this player was one
+	team_t dc_team = ent->client->sess.team;
+	if ((dc_team == TEAM_RED || dc_team == TEAM_BLUE) && level.captain[dc_team] == ent)
+		VacateCaptain(dc_team, ent);
+
 	G_RevertVote(ent->client);
 
 	// If the disconnected client called the vote, cancel it
