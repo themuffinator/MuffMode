@@ -1653,6 +1653,15 @@ void Match_Start() {
 
 	Entities_Reset(true, true, true);
 	UnReadyAll();
+	ValidateCaptains();
+
+	// g_match_lock: lock teams via level.locked so unlockteam can override per-team
+	if (g_match_lock->integer && Teams()) {
+		level.locked[TEAM_RED] = true;
+		level.locked[TEAM_BLUE] = true;
+	} else if (g_match_lock->integer) {
+		level.locked[TEAM_FREE] = true;
+	}
 
 	SetMatchID();
 
@@ -1682,6 +1691,10 @@ void Match_Reset() {
 
 	Entities_Reset(true, true, true);
 	UnReadyAll();
+	ValidateCaptains();
+
+	// clear any team locks (g_match_lock or captain locks) on reset
+	level.locked[TEAM_SPECTATOR] = level.locked[TEAM_FREE] = level.locked[TEAM_RED] = level.locked[TEAM_BLUE] = false;
 
 	level.match_time = level.time;
 	level.match_state = matchst_t::MATCH_WARMUP_DEFAULT;
@@ -2241,8 +2254,11 @@ static void CheckDMWarmupState(void) {
 		if (level.match_state <= matchst_t::MATCH_COUNTDOWN) {
 			if (level.match_state == matchst_t::MATCH_WARMUP_READYUP)
 				UnReadyAll();
-			else if (level.match_state == matchst_t::MATCH_COUNTDOWN)
+			else if (level.match_state == matchst_t::MATCH_COUNTDOWN) {
 				gi.LocBroadcast_Print(PRINT_CENTER, "Countdown cancelled: teams are imbalanced\n");
+				// clear locks set by g_match_lock at countdown start
+				level.locked[TEAM_RED] = level.locked[TEAM_BLUE] = level.locked[TEAM_FREE] = false;
+			}
 
 			if (level.match_state != matchst_t::MATCH_WARMUP_DEFAULT) {
 				level.match_state = matchst_t::MATCH_WARMUP_DEFAULT;
@@ -2265,8 +2281,11 @@ static void CheckDMWarmupState(void) {
 			if (level.match_state <= matchst_t::MATCH_COUNTDOWN) {
 				if (level.match_state == matchst_t::MATCH_WARMUP_READYUP)
 					UnReadyAll();
-				else if (level.match_state == matchst_t::MATCH_COUNTDOWN)
+				else if (level.match_state == matchst_t::MATCH_COUNTDOWN) {
 					gi.LocBroadcast_Print(PRINT_CENTER, "Countdown cancelled: not enough players\n");
+					// clear locks set by g_match_lock at countdown start
+					level.locked[TEAM_RED] = level.locked[TEAM_BLUE] = level.locked[TEAM_FREE] = false;
+				}
 
 				if (level.match_state != matchst_t::MATCH_WARMUP_DEFAULT) {
 					level.match_state = matchst_t::MATCH_WARMUP_DEFAULT;
@@ -2320,6 +2339,16 @@ countdown:
 			level.warmup_requisite = warmupreq_t::WARMUP_REQ_NONE;
 			level.warmup_notice_time = 0_sec;
 			Monsters_KillAll();
+
+			// lock teams on countdown if g_match_lock is enabled
+			if (g_match_lock->integer) {
+				if (Teams()) {
+					level.locked[TEAM_RED] = true;
+					level.locked[TEAM_BLUE] = true;
+				} else {
+					level.locked[TEAM_FREE] = true;
+				}
+			}
 
 			if (g_warmup_countdown->integer > 0) {
 				level.match_state_timer = level.time + gtime_t::from_sec(g_warmup_countdown->integer);

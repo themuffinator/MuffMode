@@ -2101,9 +2101,9 @@ bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, boo
 		
 		if (!ClientIsPlaying(ent->client) && desired_team != TEAM_SPECTATOR) {
 			bool revoke = false;
-			// Allow duel queue joining even during match lock (queue joining doesn't affect active match)
-			if (level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer && !would_be_duel_queue) {
-				gi.LocClient_Print(ent, PRINT_HIGH, "Match is locked whilst in progress, no joining permitted now.\n");
+			// Check if the desired team is locked (covers both captain lock and g_match_lock)
+			if (level.locked[desired_team] && !would_be_duel_queue) {
+				gi.LocClient_Print(ent, PRINT_HIGH, "{} is locked.\n", Teams_TeamName(desired_team));
 				revoke = true;
 			} else if (level.num_playing_human_clients >= maxplayers->integer) {
 				gi.LocClient_Print(ent, PRINT_HIGH, "Maximum player load reached.\n");
@@ -3725,6 +3725,30 @@ void VacateCaptain(team_t team, gentity_t *leaving) {
 
 /*
 =================
+ValidateCaptains
+
+Called after match start / reset to ensure captain pointers
+are still valid. Keeps existing captains if valid, otherwise
+auto-promotes the longest-tenured teammate.
+=================
+*/
+void ValidateCaptains() {
+	if (!Teams())
+		return;
+
+	for (team_t t : { TEAM_RED, TEAM_BLUE }) {
+		gentity_t *cap = level.captain[t];
+		if (cap && cap->inuse && cap->client && cap->client->pers.connected && cap->client->sess.team == t)
+			continue; // captain is still valid
+		level.captain[t] = nullptr;
+		gentity_t *replacement = FindNewCaptain(t);
+		if (replacement)
+			SetCaptain(t, replacement);
+	}
+}
+
+/*
+=================
 IsCaptainOrAdmin
 
 Returns true if ent is captain of the given team, or is an admin.
@@ -3778,7 +3802,17 @@ static void Cmd_Captain_f(gentity_t *ent) {
 		return;
 	}
 
-	gentity_t *target = ClientEntFromString(gi.args());
+	const char *args = gi.args();
+	size_t args_len = strlen(args);
+	char name_buf[MAX_NETNAME];
+	if (args_len >= 2 && args[0] == '"' && args[args_len - 1] == '"') {
+		size_t copy_len = std::min(args_len - 2, sizeof(name_buf) - 1);
+		memcpy(name_buf, args + 1, copy_len);
+		name_buf[copy_len] = '\0';
+		args = name_buf;
+	}
+
+	gentity_t *target = ClientEntFromString(args);
 
 	if (!target || !target->inuse || !target->client) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "Invalid player.\n");

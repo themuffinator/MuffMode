@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.71";
+constexpr const char *GAMEMOD_VERSION = "0.21.74";
 
 //==================================================================
 
@@ -2713,6 +2713,7 @@ bool loc_CanSee(gentity_t *targ, gentity_t *inflictor);
 bool SetTeam(gentity_t *ent, team_t desired_team, bool inactive, bool force, bool silent);
 void SetCaptain(team_t team, gentity_t *ent);
 void VacateCaptain(team_t team, gentity_t *leaving);
+void ValidateCaptains();
 const char *G_TimeString(const int msec, bool state);
 const char *G_TimeStringMs(const int msec, bool state);
 void BroadcastFriendlyMessage(team_t team, const char *msg);

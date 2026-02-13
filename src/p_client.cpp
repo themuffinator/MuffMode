@@ -2712,10 +2712,11 @@ static bool InitPlayerTeam(gentity_t *ent) {
 	ent->client->sess.team = TEAM_SPECTATOR;
 	MoveClientToFreeCam(ent);
 	
-	if (level.match_state < matchst_t::MATCH_COUNTDOWN || (level.match_state >= matchst_t::MATCH_COUNTDOWN && !g_match_lock->integer)) {
-		if (ent->client->sess.is_a_bot || (ent->svflags & SVF_BOT) || g_dm_force_join->integer || g_dm_auto_join->integer) {
-			if (ent != &g_entities[1] || (ent == &g_entities[1] && g_owner_auto_join->integer)) {
-				SetTeam(ent, PickTeam(-1), false, false, false);
+	if (ent->client->sess.is_a_bot || (ent->svflags & SVF_BOT) || g_dm_force_join->integer || g_dm_auto_join->integer) {
+		if (ent != &g_entities[1] || (ent == &g_entities[1] && g_owner_auto_join->integer)) {
+			team_t pick = PickTeam(-1);
+			if (!level.locked[pick]) {
+				SetTeam(ent, pick, false, false, false);
 				return true;
 			}
 		}

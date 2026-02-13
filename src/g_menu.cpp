@@ -1793,15 +1793,15 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 			entries[jmenu_teams_join_red].SelectFunc = G_Menu_Join_Team_Red;
 			entries[jmenu_teams_join_blue].SelectFunc = nullptr;
 		} else {
-			if (level.locked[TEAM_RED] || level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) {
-				Q_strlcpy(entries[jmenu_teams_join_red].text, G_Fmt("{} is LOCKED during play", Teams_TeamName(TEAM_RED)).data(), sizeof(entries[jmenu_teams_join_red].text));
+			if (level.locked[TEAM_RED]) {
+				Q_strlcpy(entries[jmenu_teams_join_red].text, G_Fmt("{} is LOCKED", Teams_TeamName(TEAM_RED)).data(), sizeof(entries[jmenu_teams_join_red].text));
 				entries[jmenu_teams_join_red].SelectFunc = nullptr;
 			} else {
 				Q_strlcpy(entries[jmenu_teams_join_red].text, G_Fmt("Join {} ({}/{})", Teams_TeamName(TEAM_RED), num_red, floor(pmax / 2)).data(), sizeof(entries[jmenu_teams_join_red].text));
 				entries[jmenu_teams_join_red].SelectFunc = G_Menu_Join_Team_Red;
 			}
-			if (level.locked[TEAM_BLUE] || level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) {
-				Q_strlcpy(entries[jmenu_teams_join_blue].text, G_Fmt("{} is LOCKED during play", Teams_TeamName(TEAM_BLUE)).data(), sizeof(entries[jmenu_teams_join_blue].text));
+			if (level.locked[TEAM_BLUE]) {
+				Q_strlcpy(entries[jmenu_teams_join_blue].text, G_Fmt("{} is LOCKED", Teams_TeamName(TEAM_BLUE)).data(), sizeof(entries[jmenu_teams_join_blue].text));
 				entries[jmenu_teams_join_blue].SelectFunc = nullptr;
 			} else {
 				Q_strlcpy(entries[jmenu_teams_join_blue].text, G_Fmt("Join {} ({}/{})", Teams_TeamName(TEAM_BLUE), num_blue, floor(pmax / 2)).data(), sizeof(entries[jmenu_teams_join_blue].text));
@@ -1812,8 +1812,8 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 	} else {
 		// Allow duel queue joining even during match lock (queue joining doesn't affect active match)
 		bool is_duel_queue_join = GT(GT_DUEL) && level.num_playing_clients == 2;
-		if ((level.locked[TEAM_FREE] || level.match_state >= matchst_t::MATCH_COUNTDOWN && g_match_lock->integer) && !is_duel_queue_join) {
-			Q_strlcpy(entries[jmenu_free_join].text, "Match LOCKED during play", sizeof(entries[jmenu_free_join].text));
+		if (level.locked[TEAM_FREE] && !is_duel_queue_join) {
+			Q_strlcpy(entries[jmenu_free_join].text, "Match LOCKED", sizeof(entries[jmenu_free_join].text));
 			entries[jmenu_free_join].SelectFunc = nullptr;
 		} else if (GT(GT_DUEL) && level.num_playing_clients == 2) {
 			Q_strlcpy(entries[jmenu_free_join].text, G_Fmt("Join Queue to Play ({}/{})", num_queue, pmax - 2).data(), sizeof(entries[jmenu_free_join].text));
