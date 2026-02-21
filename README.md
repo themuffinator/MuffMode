@@ -32,6 +32,8 @@ Muff Mode includes the game logic, a server config, bot files and some map entit
 	* Message of the Day
 	* Mini scoreboard
 - A game menu for joining a match, changing for or voting on settings and viewing mod and server info.
+- Comprehensive GUI menu voting system with intuitive navigation for all vote options including maps, gametypes, settings, and administrative actions.
+- Team captain system for team modes: auto-assigned captains, captain transfer, and captain-managed team controls.
 - A whole host of controls for admins, voting and more.
 - Refined match handling with conditional progression, including: warmups, readying, countdowns, post-match delays, sudden death, overtime and more.
 - Enhanced teamplay with team auto-balancing, forced balancing rules, improved team handling, communicating joined team to players, major item pickup and weapon drop POI's, and friendly fire warnings.
@@ -62,6 +64,8 @@ Muff Mode includes the game logic, a server config, bot files and some map entit
 - Clan Arena: Rocket Arena's famous round-based team elimination mode - no item spawns, no self-damage and a full arsenal of weapons.
 - CaptureStrike: A Threewave classic, combines Clan Arena, CTF and Counter Strike. Teams take turns attacking or defending and battle until one team is dead, or the attacking team captures the flag.
 - Red Rover: Clan Arena style where teams are changed on death. When a team has been eliminated, the round ends.
+- Freeze Tag: Team elimination mode where frozen players can be thawed by teammates. The round ends when one team is completely frozen. (WIP)
+- ProBall: A sports-style gametype where players compete to carry a ball into the enemy goal. (WIP)
 
 ### New Game Modifications
 - Vampiric Damage: Gain health by inflicting damage on your foes! No health pickups and a draining health value means the pressure is on!
@@ -91,6 +95,21 @@ Muff Mode includes the game logic, a server config, bot files and some map entit
  - Instant gametype changing (eg: from FFA to TDM)
  - DuelFire Damage has been changed to Haste: 50% faster movement, 50% faster weapon rate of fire.
  - Many more!
+
+## Debug Logging
+Muff Mode includes a centralized debug logging system that outputs detailed information to `muffmode_debug.log` in the game directory. This is controlled by the `g_muffmode_debug` cvar:
+
+- **g_muffmode_debug**: enables debug logging to muffmode_debug.log file (default 1)
+
+When enabled, this log captures detailed information about:
+- Match state changes and transitions
+- Player connections, disconnections, and team changes
+- Voting processes and results
+- Gametype changes and rule applications
+- Entity spawning and map loading
+- Error conditions and debugging information
+
+This feature is particularly useful for server administrators and mod developers to troubleshoot issues or analyze server behavior.
 
 ## Rulesets
 Alter the gameplay balance by changing the ruleset.
@@ -130,7 +149,34 @@ A vanilla-friendly ruleset with select balance improvements:
  - **Plasma Beam** DM damage reduced from 15 to 10, maximum range limited to 768 units (same as LG in Q3)
  - **Chaingun** damage reduced to 5 (from 6 in DM / 8 in coop)
  - **Hyperblaster** projectile speed increased to 1100 (from 1000)
+ - **Machinegun** damage reduced to 7 (from 8 in DM)
+ - **Rocket Launcher** speed increased to 720 in deathmatch (from 650)
  - Powerup pickup and activation sounds broadcast to all players in deathmatch
+
+### QUAKE Style (g_ruleset 5)
+Inspired by Quake 1, this ruleset brings classic arena shooter elements to Quake II:
+ - Start with Shotgun and Axe only (no Machinegun, Chaingun, Railgun)
+ - Max ammo limits set to 200 for all types
+ - **Rocket Launcher** damage randomized 100-120, speed 1000
+ - **Hyperblaster** damage 15 (DM) / 20 (coop)
+ - **Machinegun** damage 8 (default)
+ - **Chaingun** damage 8 (default)
+ - No footstep sounds when landing from jumps
+ - Armor system: stronger armor protection mechanics
+ - Classic weapon balance and pickup rules
+
+### Quake Champions Style (g_ruleset 6)
+Modern arena shooter mechanics inspired by Quake Champions:
+ - Random starting weapon (Shotgun, Machinegun, or Hyperblaster) with 50 ammo
+ - Max ammo limits: 200 bullets, 200 for other types
+ - **Rocket Launcher** damage 100, speed 750
+ - **Hyperblaster** damage reduced to 12, speed 1100
+ - **Machinegun** damage 6
+ - **Chaingun** damage 6
+ - **Railgun** damage 80
+ - **Plasma Beam** damage 15 (default)
+ - Faster overall gameplay pace and modern weapon balance
+ - Enhanced movement mechanics and timing
  
 ## Commands and Variables
 
@@ -139,8 +185,8 @@ Use **[command] [arg]** for the below listed admin commands:
  - **startmatch**: force the match to start, requires warmup.
  - **endmatch**: force the match to end, requires a match in progress.
  - **resetmatch**: force the match to reset to warmup, requires a match in progress.
- - **lockteam [red/blue]**: locks a team from being joined
- - **unlockteam [red/blue]**: unlocks a locked team so players can join
+ - **lockteam [red/blue]**: locks a team from being joined. Admins can target a team by arg; captains can lock their own team.
+ - **unlockteam [red/blue]**: unlocks a locked team. Admins can target a team by arg; captains can unlock their own team.
  - **setteam [clientnum/name]**: forces a team change for a client
  - **shuffle**: shuffles and balances the teams, resets the match. Requires a team gametype.
  - **balance**: balances the teams without a shuffle, this switches last joined players from stacked team. Requires a team gametype.
@@ -165,11 +211,14 @@ Use **[command] [arg]** for the below listed client commands:
  
 ### Client Commands - Gameplay
  - **hook/unhook**: hook/unhook off-hand grapple
+ - **captain**: in team modes, claim captain if vacant, or show current team captain.
+ - **captain [clientname/clientnum]**: transfer captain status to a teammate (captain only).
  - **followkiller** : auto-follow killers when spectating (disabled by default)
  - **followleader** : when spectating, auto-follows leading player
  - **followpowerup** : auto-follows player picking up powerups when spectating (disabled by default)
  - **forfeit**: forfeits a match (currently only in duels, requires g_allow_forfeit 1).
  - **ready/notready**: sets ready status.
+ - **readyteam**: readies your whole team (captain or admin only, team modes).
  - **readyup**: toggles ready status.
  - **callvote/cv**: calls a vote (use vote commands).
  - **vote [yes/no]**: vote or veto a callvote.
@@ -191,7 +240,7 @@ Use **callvote [command] [arg]** for the below listed vote commands:
  - **map**: changes the level to the specified map, map needs to be a part of the map list.
  - **nextmap**: forces level change to the next map.
  - **restart**: force the match to reset to warmup, requires a match in progress.
- - **gametype**: changes gametype to the specified type (ffa|duel|tdm|ctf|ca|ft|rr|strike|lms|horde)
+ - **gametype**: changes gametype to the specified type (ffa|duel|tdm|ctf|ca|ft|strike|rr|lms|horde|ball|instagib|nadefest)
  - **timelimit**: changes timelimit to the minutes specified.
  - **scorelimit**: changes scorelimit to the value specified.
  - **shuffle**: shuffles and balances the teams, resets the match. Requires a team gametype.
@@ -223,6 +272,8 @@ Use **callvote [command] [arg]** for the below listed vote commands:
  - **g_allow_voting**: General control over voting, 0 prohibits any voting. (default 0)
  - **g_arena_start_armor**: sets starting armor value in arena modes, range from 1-999, value affects armor tier (default 200)
  - **g_arena_start_health**: sets starting health value in arena modes, range from 1-999 (default 200)
+ - **g_arena_dmg_armor**: when set to 1, allows armor damage in arena modes (default 0)
+ - **g_coop_health_scaling**: scales health in co-op mode based on player count, range 0-1 (default 0)
  - **g_corpse_sink_time**: sets time in seconds for corpses to sink and disappear (default: 60)
  - **g_dm_allow_no_humans**: when set to 1, allows matches to start or continue with only bots (default 1)
  - **g_dm_do_readyup**: Enforce players to ready up to progress from match warmup stage (requires g_dm_do_warmup 1). (default 0)
@@ -242,7 +293,31 @@ Use **callvote [command] [arg]** for the below listed vote commands:
 	&2: allow dropping powerups
 	&4: allow dropping weapons and ammo
  - **g_fast_doors**: When set to 1, doubles the default speed of standard and rotating doors (default 1)
+ - **g_frames_per_frame**: controls how many game frames to run per server frame, useful for performance tuning (default 1)
  - **g_frag_messages**: draw frag messages (default 1)
+ - **g_gametype_cfg**: when set to 1, executes gametype-specific config files when gametype changes (default 1)
+
+### GT- Config File System
+When `g_gametype_cfg` is enabled (default), the game automatically executes configuration files specific to each gametype when the gametype changes via voting or admin commands. This allows server administrators to set up gametype-specific settings, maps, and rules.
+
+The config files follow the naming convention: `gt-[GAMETYPE].cfg`
+
+Available config files:
+- `gt-FFA.cfg` - Free for All settings
+- `gt-DUEL.cfg` - Duel settings  
+- `gt-TDM.cfg` - Team Deathmatch settings
+- `gt-CTF.cfg` - Capture the Flag settings
+- `gt-CA.cfg` - Clan Arena settings
+- `gt-FT.cfg` - Freeze Tag settings
+- `gt-STRIKE.cfg` - CaptureStrike settings
+- `gt-REDROVER.cfg` - Red Rover settings
+- `gt-LMS.cfg` - Last Man Standing settings
+- `gt-HORDE.cfg` - Horde mode settings
+- `gt-BALL.cfg` - ProBall settings
+- `gt-INSTAGIB.cfg` - Instagib settings
+- `gt-NADEFEST.cfg` - Nade Fest settings
+
+These config files should be placed in the main game directory and can contain any server commands, cvar settings, map lists, or other configurations specific to that gametype. The system ensures configs are only executed when the gametype actually changes, not on every map load.
  - **g_gametype**: cvar sets gametype by index number, this is the current list:
 	0: Campaign (not used at present, use deathmatch 0 as usual)
 	1. Free for All
@@ -255,16 +330,30 @@ Use **callvote [command] [arg]** for the below listed vote commands:
 	8. Red Rover
 	9. Last Man Standing
 	10. Horde
-	11. Race (WIP)
+	11. ProBall (WIP)
+	12. Race (WIP)
+	13. Instagib
+	14. Nade Fest
+ - **g_horde_starting_wave**: sets the starting wave number for Horde mode (default 1)
  - **g_inactivity**: Values above 0 enables an inactivity timer for players, specifying number of seconds since last input to point of flagging the player as inactive. A warning is sent to the player 10 seconds before triggering and once triggered, the player is moved to spectators. Inactive clients are noted as such using the 'players' command. (default: 120)
  - **g_instagib_splash**: enables a non-damaging explosion from railgun shots in instagib, allows for rail jumping or knocking foes about (default 0)
  - **g_knockback_scale**: scales all knockback resulting from damage received (default 1.0)
  - **g_ladder_steps**: Allow ladder step sounds, 1 = only in campaigns, 2 = always on (default 1)
  - **g_match_lock**: when set to 1, prohibits joining the match while in progress (default 0)
+ - **g_map_list**: space-separated list of maps for server rotation (default: "")
+ - **g_map_list_shuffle**: controls map list shuffling behavior (default 1):
+	0: no shuffling
+	1: shuffle every time the list wraps around
+	2: shuffle once per gametype session
+ - **g_map_pool**: additional map pool for voting (default: "")
  - **g_motd_filename**: points to filename of message of the day file, reverts to default when blank (default motd.txt)
  - **g_mover_speed_scale**: sets speed scaling factor for all movers in maps (doors, rotators, lifts etc.) (default: 1.0f)
  - **g_no_powerups**: disable powerup pickups (Quad, Protection, Double, Haste, Invisibility, etc.)
+ - **g_mapspawn_no_bfg**: when set to 1, prevents BFG from spawning in maps (default 0)
+ - **g_mapspawn_no_plasmabeam**: when set to 1, prevents Plasma Beam from spawning in maps (default 0)
  - **g_owner_auto_join**: when set to 0, avoids auto-joining a match as lobby owner (default 1)
+ - **g_owner_push_scores**: when set to 1, automatically shows scores to lobby owner on join (default 0)
+ - **g_muffmode_debug**: enables debug logging to muffmode_debug.log file (default 1)
  - **g_round_countdown**: sets round countdown time (in seconds) in round-based gametypes (default 10)
  - **g_ruleset**: gameplay rules (default 2):
 	1. Quake II Rerelease
@@ -290,13 +379,30 @@ Use **callvote [command] [arg]** for the below listed vote commands:
  - **g_votable_rulesets**: Space-separated list of ruleset short names that can be voted on. If empty, all implemented rulesets are available for voting. Example: "q2re mm q3a q2reb qc" (default: "")
  - **g_warmup_ready_percentage**: in match mode, sets percentile of ready players out of total players required to start the match. Set to 0 to disable readying up. (default: 0.51f)
  - **g_weapon_projection**: changes weapon projection offset. 0 = normal, 1 = always force central handedness, 2 = force central view projection. looks strange with view weapons. (default: 0)
+ - **g_weapon_respawn_time**: sets respawn time for weapons in seconds (default 30)
  - **hostname**: set string for server name, this gets printed at top of game menu for all to see. Limit this to 26 chars max.
  - **maxplayers**: Set max number of players in the game (ie: non-spectators), it is capped to maxclients. In team games, team max size will be maxplayers/2 and rounded down.
  - **mercylimit**: Sets score gap limit to end match, 0 to disable (default 0)
  - **noplayerstime**: Sets time in minutes in which there have been no players to force a change of map, 0 to disable (default 0)
  - **roundlimit**: sets number of round wins to win the match in round-based gametypes (default 8)
  - **roundtimelimit**: sets round time limit (in minutes) in round-based gametypes (default 2)
- 
+
+### DEBUG-ONLY Weapon Balance Cvars
+The following cvars are only available in DEBUG builds for testing and development:
+ - **g_weapon_balance_dev**: enables weapon balance development mode (default 0)
+ - **g_chaingun_max_shots**: sets maximum shots for chaingun (default 0)
+ - **g_chaingun_damage**: sets chaingun damage value (default 0)
+ - **g_chaingun_hspread**: sets chaingun horizontal spread (default 0)
+ - **g_chaingun_vspread**: sets chaingun vertical spread (default 0)
+ - **g_chaingun_spread_offset**: sets chaingun spread offset (default 0)
+ - **g_machinegun_damage**: sets machinegun damage value (default 0)
+ - **g_machinegun_hspread**: sets machinegun horizontal spread (default 0)
+ - **g_machinegun_vspread**: sets machinegun vertical spread (default 0)
+ - **g_hyperblaster_speed**: sets hyperblaster projectile speed (default 0)
+ - **g_railgun_damage**: sets railgun damage value (default 0)
+ - **g_rocketlauncher_damage**: sets rocket launcher damage value (default 0)
+ - **g_rocketlauncher_speed**: sets rocket launcher projectile speed (default 0)
+
 ## Level Controls
  
 ### New Items

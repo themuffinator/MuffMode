@@ -134,6 +134,10 @@ void P_Menu_Do_Update(gentity_t *ent) {
 	if (hnd->UpdateFunc)
 		hnd->UpdateFunc(ent);
 
+	// Guard: UpdateFunc may have closed/freed the menu (e.g. vote menu when vote passes)
+	if (!ent->client->menu)
+		return;
+
 	statusbar_t sb;
 
 	sb.xv(32).yv(8).picn("inventory");

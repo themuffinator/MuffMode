@@ -1151,6 +1151,8 @@ void AnnouncerSound(gentity_t *ent, const char *announcer_sound, const char *bac
 	MuffModeLog("DEBUG", "AnnouncerSound: enter (announcer=%s, backup=%s, use_backup=%d)",
 	           announcer_sound ? announcer_sound : "(null)", backup_sound ? backup_sound : "(null)", (int)use_backup);
 	for (auto ec : active_clients()) {
+		if (!ec->inuse || !ec->client || !ec->client->pers.connected)
+			continue;
 		if (ent == world || ent == ec || (!ClientIsPlaying(ec->client) && ec->client->follow_target == ent)) {
 			if (ec->client->sess.is_a_bot)
 				continue;
@@ -1180,6 +1182,8 @@ void AnnouncerSound(gentity_t *ent, const char *announcer_sound, const char *bac
 
 void QLSound(gentity_t *ent, const char *ql_sound, const char *backup_sound, bool use_backup) {
 	for (auto ec : active_clients()) {
+		if (!ec->inuse || !ec->client || !ec->client->pers.connected)
+			continue;
 		if (ent == world || ent == ec || (!ClientIsPlaying(ec->client) && ec->client->follow_target == ent)) {
 			if (ec->client->sess.is_a_bot)
 				continue;

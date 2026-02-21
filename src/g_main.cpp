@@ -755,6 +755,17 @@ void GT_Changes() {
 	if (!level.init)
 		return;
 
+	// If g_map_list_shuffle was changed via console, shuffle immediately
+	extern bool g_map_list_shuffled;
+	static int s_map_list_shuffle_modified = -1;
+	if (s_map_list_shuffle_modified != g_map_list_shuffle->modified_count) {
+		s_map_list_shuffle_modified = g_map_list_shuffle->modified_count;
+		if (g_map_list_shuffle->integer == 2) {
+			G_ShuffleMapList();
+			g_map_list_shuffled = true;
+		}
+	}
+
 	bool changed = false, team_reset = false;
 	gametype_t gt = gametype_t::GT_NONE;
 
@@ -1035,7 +1046,7 @@ static void InitGame() {
 	g_allow_spec_vote = gi.cvar("g_allow_spec_vote", "0", CVAR_NOFLAGS);
 	g_allow_techs = gi.cvar("g_allow_techs", "auto", CVAR_NOFLAGS);
 	g_allow_vote_midgame = gi.cvar("g_allow_vote_midgame", "0", CVAR_NOFLAGS);
-	g_muffmode_debug = gi.cvar("g_muffmode_debug", "1", CVAR_NOFLAGS);
+	g_muffmode_debug = gi.cvar("g_muffmode_debug", "0", CVAR_NOFLAGS);
 	g_allow_voting = gi.cvar("g_allow_voting", "1", CVAR_NOFLAGS);
 	g_arena_dmg_armor = gi.cvar("g_arena_dmg_armor", "0", CVAR_NOFLAGS);
 	g_arena_start_armor = gi.cvar("g_arena_start_armor", "200", CVAR_NOFLAGS);
@@ -1083,7 +1094,7 @@ static void InitGame() {
 	g_friendly_fire = gi.cvar("g_friendly_fire", "0", CVAR_NOFLAGS);
 	g_inactivity = gi.cvar("g_inactivity", "120", CVAR_NOFLAGS);
 	g_infinite_ammo = gi.cvar("g_infinite_ammo", "0", CVAR_LATCH);
-	g_instant_weapon_switch = gi.cvar("g_instant_weapon_switch", "0", CVAR_LATCH);
+	g_instant_weapon_switch = gi.cvar("g_instant_weapon_switch", "0", CVAR_NOFLAGS);
 	g_item_bobbing = gi.cvar("g_item_bobbing", "1", CVAR_NOFLAGS);
 	g_knockback_scale = gi.cvar("g_knockback_scale", "1.0", CVAR_NOFLAGS);
 	g_ladder_steps = gi.cvar("g_ladder_steps", "1", CVAR_NOFLAGS);

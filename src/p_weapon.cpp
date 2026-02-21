@@ -1368,7 +1368,7 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 		case RS_QC:
 			splash_radius = 120;
 			splash_damage = damage;
-			speed = 650;
+			speed = 750;
 			break;
 		case RS_VANILLA_PLUS:
 			splash_radius = 120;
@@ -1406,7 +1406,7 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 			damage = 100;
 			splash_radius = 120;
 			splash_damage = damage;
-			speed = 650;
+			speed = 750;
 			break;
 		case RS_VANILLA_PLUS:
 			damage = 100;
@@ -2807,6 +2807,7 @@ static void Weapon_PlasmaBeam_Fire(gentity_t *ent) {
 	switch (game.ruleset) {
 	case RS_MM:
 	case RS_VANILLA_PLUS:
+	case RS_QC:
 		damage = deathmatch->integer ? 10 : 15;
 		kick = damage;
 		break;
