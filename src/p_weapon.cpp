@@ -1373,7 +1373,7 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 		case RS_VANILLA_PLUS:
 			splash_radius = 120;
 			splash_damage = damage;
-			speed = (deathmatch->integer ? 720 : 650);
+			speed = (deathmatch->integer ? 750 : 650);
 			break;
 		case RS_Q3A:
 			splash_radius = 120;
@@ -1412,7 +1412,7 @@ static void Weapon_RocketLauncher_Fire(gentity_t *ent) {
 			damage = 100;
 			splash_radius = 120;
 			splash_damage = damage;
-			speed = (deathmatch->integer ? 720 : 650);
+			speed = (deathmatch->integer ? 750 : 650);
 			break;
 		case RS_Q3A:
 			damage = 100;
@@ -1944,8 +1944,8 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : 200;
 			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : 200;
 		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
-			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : 255;
-			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : 425;
+			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : DEFAULT_BULLET_HSPREAD;
+			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : DEFAULT_BULLET_VSPREAD;
 		} else {
 			hs = (g_machinegun_hspread && g_machinegun_hspread->integer > 0) ? g_machinegun_hspread->integer : DEFAULT_BULLET_HSPREAD;
 			vs = (g_machinegun_vspread && g_machinegun_vspread->integer > 0) ? g_machinegun_vspread->integer : DEFAULT_BULLET_VSPREAD;
@@ -1964,8 +1964,8 @@ static void Weapon_Machinegun_Fire(gentity_t *ent) {
 			hs = DEFAULT_BULLET_HSPREAD;
 		} else if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
 			damage = 7;
-			vs = 425;
-			hs = 255;
+			vs = DEFAULT_BULLET_VSPREAD;
+			hs = DEFAULT_BULLET_HSPREAD;
 		} else {
 			damage = 8;
 			vs = DEFAULT_BULLET_VSPREAD;
@@ -2149,8 +2149,8 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 		spread_offset = (g_chaingun_spread_offset && g_chaingun_spread_offset->value > 0.0f) ? g_chaingun_spread_offset->value : 4.0f;
 	} else {
 		if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
-			hspread = 330;
-			vspread = 550;
+			hspread = DEFAULT_BULLET_HSPREAD;
+			vspread = DEFAULT_BULLET_VSPREAD;
 		} else {
 			hspread = DEFAULT_BULLET_HSPREAD;
 			vspread = DEFAULT_BULLET_VSPREAD;
@@ -2159,8 +2159,8 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 	}
 #else
 	if (deathmatch->integer && RS(RS_VANILLA_PLUS)) {
-		hspread = 330;
-		vspread = 550;
+		hspread = DEFAULT_BULLET_HSPREAD;
+		vspread = DEFAULT_BULLET_VSPREAD;
 	} else {
 		hspread = DEFAULT_BULLET_HSPREAD;
 		vspread = DEFAULT_BULLET_VSPREAD;
@@ -2226,7 +2226,7 @@ static void Weapon_Shotgun_Fire(gentity_t *ent) {
 	}
 
 	G_LagCompensate(ent, start, dir);
-	int pellets = RS(RS_Q3A) ? 11 : (deathmatch->integer && RS(RS_VANILLA_PLUS) ? 14 : 12);
+	int pellets = RS(RS_Q3A) ? 11 : 12;
 	fire_shotgun(ent, start, dir, damage, kick, 500, 500, pellets, MOD_SHOTGUN);
 	G_UnLagCompensate();
 

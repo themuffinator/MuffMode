@@ -97,6 +97,7 @@ void P_Menu_Close(gentity_t *ent) {
 		gi.TagFree(hnd->arg);
 	gi.TagFree(hnd);
 	ent->client->menu = nullptr;
+	ent->client->inmenu = false;
 	ent->client->showscores = false;
 	
 	gentity_t *e = ent->client->follow_target ? ent->client->follow_target : ent;
