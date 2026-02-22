@@ -3807,36 +3807,56 @@ void ExitLevel() {
 
 		const std::string safe_mapname = sanitize_name(level.mapname, "map");
 		std::string screenshot_cmd;
+		constexpr size_t MAX_SCREENSHOT_FILENAME = 120;
 
 		if (GT(GT_DUEL) && level.num_playing_clients >= 2) {
 			MuffModeLog("DEBUG", "ExitLevel: duel screenshot - sorted[0]=%d, sorted[1]=%d",
 				level.sorted_clients[0], level.sorted_clients[1]);
-			gentity_t *e1 = &g_entities[level.sorted_clients[0] + 1];
-			gentity_t *e2 = &g_entities[level.sorted_clients[1] + 1];
-			MuffModeLog("DEBUG", "ExitLevel: e1->client=%p, e2->client=%p",
-				(void*)e1->client, (void*)e2->client);
-			std::string n1 = sanitize_name((e1->client && e1->inuse) ? e1->client->resp.netname : "");
-			std::string n2 = sanitize_name((e2->client && e2->inuse) ? e2->client->resp.netname : "");
 
-			const std::string filename = std::string(G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
+			const int c1 = level.sorted_clients[0];
+			const int c2 = level.sorted_clients[1];
+			const bool duel_indices_valid = (c1 >= 0 && c1 < MAX_CLIENTS && c2 >= 0 && c2 < MAX_CLIENTS);
+
+			gentity_t *e1 = duel_indices_valid ? &g_entities[c1 + 1] : nullptr;
+			gentity_t *e2 = duel_indices_valid ? &g_entities[c2 + 1] : nullptr;
+
+			if (!duel_indices_valid) {
+				MuffModeLog("DEBUG", "ExitLevel: invalid duel sorted client indices (%d, %d), using fallback names", c1, c2);
+			}
+
+			MuffModeLog("DEBUG", "ExitLevel: e1->client=%p, e2->client=%p",
+				(void *)(e1 ? e1->client : nullptr), (void *)(e2 ? e2->client : nullptr));
+			std::string n1 = sanitize_name((e1 && e1->client && e1->inuse) ? e1->client->resp.netname : "", "player1");
+			std::string n2 = sanitize_name((e2 && e2->client && e2->inuse) ? e2->client->resp.netname : "", "player2");
+
+			std::string filename = std::string(G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
 				n1.c_str(), n2.c_str(), safe_mapname.c_str(), 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec));
+			if (filename.length() > MAX_SCREENSHOT_FILENAME)
+				filename.resize(MAX_SCREENSHOT_FILENAME);
 			screenshot_cmd = std::string(G_Fmt("screenshot {}\n", filename));
 			gi.Com_PrintFmt("Screenshot saved: {}\n", filename.c_str());
 		} else {
 			gentity_t *ent = &g_entities[1];
-			const char *raw_name = (ent->client->follow_target && ent->client->follow_target->client) 
-				? ent->client->follow_target->client->resp.netname 
-				: ent->client->resp.netname;
+			const char *raw_name = "player";
+			if (ent && ent->inuse && ent->client) {
+				gentity_t *follow = ent->client->follow_target;
+				raw_name = (follow && follow->inuse && follow->client)
+					? follow->client->resp.netname
+					: ent->client->resp.netname;
+			}
 			std::string name = sanitize_name(raw_name);
 
-			const std::string filename = std::string(G_Fmt("{}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}", gt_short_name_upper[g_gametype->integer],
+			std::string filename = std::string(G_Fmt("{}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}", gt_short_name_upper[g_gametype->integer],
 				name.c_str(), safe_mapname.c_str(), 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec));
+			if (filename.length() > MAX_SCREENSHOT_FILENAME)
+				filename.resize(MAX_SCREENSHOT_FILENAME);
 			screenshot_cmd = std::string(G_Fmt("screenshot {}\n", filename));
 			gi.Com_PrintFmt("Screenshot saved: {}\n", filename.c_str());
 		}
 		MuffModeLog("DEBUG", "ExitLevel: screenshot command='%s' (raw_mapname='%s', safe_mapname='%s')",
 			screenshot_cmd.c_str(), level.mapname, safe_mapname.c_str());
-		gi.AddCommandString(screenshot_cmd.c_str());
+		if (!screenshot_cmd.empty())
+			gi.AddCommandString(screenshot_cmd.c_str());
 	}
 
 	// [Paril-KEX] N64 fade
