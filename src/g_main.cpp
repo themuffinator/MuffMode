@@ -1381,6 +1381,8 @@ static void Entities_Reset(bool reset_players, bool reset_ghost, bool reset_scor
 				ec->flags &= ~FL_GODMODE;
 
 				ec->client->eliminated = false;
+				ec->client->pers.dmg_scorer = 0;
+				ec->client->pers.dmg_team = 0;
 				ec->client->respawn_time = level.time;	// +random_time(1_sec, 4_sec);
 				ec->client->pers.last_spawn_time = level.time;
 				ec->client->ps.pmove.pm_type = PM_DEAD;

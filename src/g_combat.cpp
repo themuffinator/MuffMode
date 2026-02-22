@@ -692,6 +692,8 @@ void T_Damage(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, const 
 	asave += save;
 
 	if (!(dflags & DAMAGE_NO_PROTECTION)) {
+		// Arena modes always block self-health damage; g_arena_dmg_armor only
+		// affects whether self-hit damage can be absorbed by armor.
 		if (targ == attacker && GTF(GTF_ARENA)) {
 			take = 0;
 			save = 0;	// damage;
