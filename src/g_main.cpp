@@ -2054,14 +2054,30 @@ static void CheckDMRoundState(void) {
 		if (level.time >= level.round_state_timer) {
 			// highest number of players remaining or highest total health wins
 			if (GT(GT_CA)) {
-				if (level.num_living_red > level.num_living_blue) {
+				int living_red = 0, living_blue = 0;
+
+				for (auto ec : active_clients()) {
+					if (ec->health <= 0 || ec->client->eliminated)
+						continue;
+
+					switch (ec->client->sess.team) {
+					case TEAM_RED:
+						living_red++;
+						break;
+					case TEAM_BLUE:
+						living_blue++;
+						break;
+					}
+				}
+
+				if (living_red > living_blue) {
 					G_AdjustTeamScore(TEAM_RED, 1);
-					gi.LocBroadcast_Print(PRINT_CENTER, "{} wins the round!\n(players remaining: {} vs {})\n", Teams_TeamName(TEAM_RED), level.num_living_red, level.num_living_blue);
+					gi.LocBroadcast_Print(PRINT_CENTER, "{} wins the round!\n(players remaining: {} vs {})\n", Teams_TeamName(TEAM_RED), living_red, living_blue);
 					//gi.positioned_sound(world->s.origin, world, CHAN_AUTO | CHAN_RELIABLE, gi.soundindex("ctf/flagcap.wav"), 1, ATTN_NONE, 0);
 					AnnouncerSound(world, "red_wins_round", "ctf/flagcap.wav", false);
-				} else if (level.num_living_blue > level.num_living_red) {
+				} else if (living_blue > living_red) {
 					G_AdjustTeamScore(TEAM_BLUE, 1);
-					gi.LocBroadcast_Print(PRINT_CENTER, "{} wins the round!\n(players remaining: {} vs {})\n", Teams_TeamName(TEAM_BLUE), level.num_living_blue, level.num_living_red);
+					gi.LocBroadcast_Print(PRINT_CENTER, "{} wins the round!\n(players remaining: {} vs {})\n", Teams_TeamName(TEAM_BLUE), living_blue, living_red);
 					//gi.positioned_sound(world->s.origin, world, CHAN_AUTO | CHAN_RELIABLE, gi.soundindex("ctf/flagcap.wav"), 1, ATTN_NONE, 0);
 					AnnouncerSound(world, "blue_wins_round", "ctf/flagcap.wav", true);
 				} else {
