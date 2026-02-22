@@ -3786,13 +3786,15 @@ void ExitLevel() {
 		time(&gmtime);
 		ltime = localtime(&gmtime);
 
-		// Helper lambda to sanitize player names for filenames (replace spaces and invalid chars)
-		auto sanitize_name = [](const char *name) -> std::string {
+		// Helper lambda to sanitize filename components (replace spaces and invalid chars)
+		auto sanitize_name = [](const char *name, const char *fallback = "player") -> std::string {
 			std::string result;
 			for (const char *p = name; *p; p++) {
 				char c = *p;
-				// Replace spaces with underscores, remove other invalid filename chars
+				// Replace spaces/path separators with underscores, remove other invalid filename chars
 				if (c == ' ') {
+					result += '_';
+				} else if (c == '/' || c == '\\' || c == ':') {
 					result += '_';
 				} else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || 
 				           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
@@ -3800,10 +3802,11 @@ void ExitLevel() {
 				}
 				// Skip other characters
 			}
-			return result.empty() ? "player" : result;
+			return result.empty() ? fallback : result;
 		};
 
-		const char *s = "";
+		const std::string safe_mapname = sanitize_name(level.mapname, "map");
+		std::string screenshot_cmd;
 
 		if (GT(GT_DUEL) && level.num_playing_clients >= 2) {
 			MuffModeLog("DEBUG", "ExitLevel: duel screenshot - sorted[0]=%d, sorted[1]=%d",
@@ -3815,10 +3818,10 @@ void ExitLevel() {
 			std::string n1 = sanitize_name((e1->client && e1->inuse) ? e1->client->resp.netname : "");
 			std::string n2 = sanitize_name((e2->client && e2->inuse) ? e2->client->resp.netname : "");
 
-			const char *filename = G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
-				n1.c_str(), n2.c_str(), level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
-			s = G_Fmt("screenshot {}\n", filename).data();
-			gi.Com_PrintFmt("Screenshot saved: {}\n", filename);
+			const std::string filename = std::string(G_Fmt("{}-vs-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}",
+				n1.c_str(), n2.c_str(), safe_mapname.c_str(), 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec));
+			screenshot_cmd = std::string(G_Fmt("screenshot {}\n", filename));
+			gi.Com_PrintFmt("Screenshot saved: {}\n", filename.c_str());
 		} else {
 			gentity_t *ent = &g_entities[1];
 			const char *raw_name = (ent->client->follow_target && ent->client->follow_target->client) 
@@ -3826,12 +3829,14 @@ void ExitLevel() {
 				: ent->client->resp.netname;
 			std::string name = sanitize_name(raw_name);
 
-			const char *filename = G_Fmt("{}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}", gt_short_name_upper[g_gametype->integer],
-				name.c_str(), level.mapname, 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec).data();
-			s = G_Fmt("screenshot {}\n", filename).data();
-			gi.Com_PrintFmt("Screenshot saved: {}\n", filename);
+			const std::string filename = std::string(G_Fmt("{}-{}-{}-{}_{:02}_{:02}-{:02}_{:02}_{:02}", gt_short_name_upper[g_gametype->integer],
+				name.c_str(), safe_mapname.c_str(), 1900 + ltime->tm_year, ltime->tm_mon + 1, ltime->tm_mday, ltime->tm_hour, ltime->tm_min, ltime->tm_sec));
+			screenshot_cmd = std::string(G_Fmt("screenshot {}\n", filename));
+			gi.Com_PrintFmt("Screenshot saved: {}\n", filename.c_str());
 		}
-		gi.AddCommandString(s);
+		MuffModeLog("DEBUG", "ExitLevel: screenshot command='%s' (raw_mapname='%s', safe_mapname='%s')",
+			screenshot_cmd.c_str(), level.mapname, safe_mapname.c_str());
+		gi.AddCommandString(screenshot_cmd.c_str());
 	}
 
 	// [Paril-KEX] N64 fade
