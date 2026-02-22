@@ -2953,7 +2953,7 @@ void CalculateRanks() {
 
 					// find and update all spectators who want to follow leader
 					for (auto ec2 : active_clients()) {
-						if (!ClientIsPlaying(ec2->client) && ec2->client->sess.pc.follow_leader && ec2->client->follow_target != ec) {
+						if ((!ClientIsPlaying(ec2->client) || ec2->client->eliminated) && ec2->client->sess.pc.follow_leader && ec2->client->follow_target != ec) {
 							ec2->client->follow_queued_target = ec;
 							ec2->client->follow_queued_time = level.time;
 						}

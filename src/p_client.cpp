@@ -1051,7 +1051,7 @@ DIE(player_die) (gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 			}
 
 			for (auto ec : active_clients()) {
-				if (!ClientIsPlaying(ec->client) && ec->client->sess.pc.follow_killer) {
+				if ((!ClientIsPlaying(ec->client) || ec->client->eliminated) && ec->client->sess.pc.follow_killer) {
 					ec->client->follow_queued_target = attacker;
 					ec->client->follow_queued_time = level.time;
 				}
@@ -4254,7 +4254,7 @@ void ClientThink(gentity_t *ent, usercmd_t *ucmd) {
 	}
 
 	// check for queued follow targets
-	if (!ClientIsPlaying(client)) {
+	if (!ClientIsPlaying(client) || client->eliminated) {
 		if (client->follow_queued_target && level.time > client->follow_queued_time + 500_ms) {
 			client->follow_target = client->follow_queued_target;
 			client->follow_update = true;
