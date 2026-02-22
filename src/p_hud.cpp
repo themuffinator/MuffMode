@@ -1268,7 +1268,7 @@ static void CTF_SetStats(gentity_t *ent, bool blink) {
 			ent->client->ps.stats[STAT_MINISCORE_SECOND_PIC] = 0;
 	}
 
-	if (level.match_state == MATCH_IN_PROGRESS) {
+	if (level.match_state >= MATCH_IN_PROGRESS) {
 		ent->client->ps.stats[STAT_MINISCORE_FIRST_SCORE] = level.team_scores[TEAM_RED];
 		ent->client->ps.stats[STAT_MINISCORE_SECOND_SCORE] = level.team_scores[TEAM_BLUE];
 	}
@@ -1390,7 +1390,7 @@ static void SetMiniScoreStats(gentity_t *ent) {
 		CTF_SetStats(ent, blink);
 	} else {
 		if (teams) {
-			if (level.match_state == MATCH_IN_PROGRESS) {
+			if (level.match_state >= MATCH_IN_PROGRESS) {
 				ent->client->ps.stats[STAT_MINISCORE_FIRST_PIC] = ii_teams_red_default;
 				ent->client->ps.stats[STAT_MINISCORE_FIRST_SCORE] = level.team_scores[TEAM_RED];
 				ent->client->ps.stats[STAT_MINISCORE_SECOND_PIC] = ii_teams_blue_default;
