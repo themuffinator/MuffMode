@@ -59,6 +59,9 @@ void MoveClientToIntermission(gentity_t *ent) {
 	ent->client->showhelp = false;
 	ent->client->showscores = false;
 
+	if (ent->client->menu)
+		P_Menu_Close(ent);
+
 	globals.server_flags &= ~SERVER_FLAG_SLOW_TIME;
 
 	ent->client->ir_time = 0_ms;
