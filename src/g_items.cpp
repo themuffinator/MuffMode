@@ -1159,7 +1159,7 @@ void Tech_ApplyAutoDoc(gentity_t *ent) {
 				cl->pers.inventory[index] += g_vampiric_damage->integer ? 10 : 5;
 				if (cl->pers.inventory[index] > max)
 					cl->pers.inventory[index] = max;
-				cl->tech_regen_time += 1_sec;
+				cl->tech_regen_time += delay;
 				noise = true;
 			}
 		}
