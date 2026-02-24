@@ -2460,6 +2460,149 @@ static void Cmd_Boot_f(gentity_t *ent) {
 	gi.AddCommandString(G_Fmt("kick {}\n", targ - g_entities).data());
 }
 
+static void Cmd_Doctor_f(gentity_t *ent) {
+	bool include_info = false;
+
+	if (gi.argc() > 1) {
+		const char *mode = gi.argv(1);
+		if (!Q_strcasecmp(mode, "full"))
+			include_info = true;
+		else if (Q_strcasecmp(mode, "quick")) {
+			gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [quick|full]\n", gi.argv(0));
+			return;
+		}
+	}
+
+	int errors = 0;
+	int warnings = 0;
+	int infos = 0;
+
+	gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "\n[MuffMode Doctor] Running {} diagnostics...\n", include_info ? "full" : "quick");
+
+	auto report = [&](const char *severity, const char *problem, const char *fix, bool is_info = false) {
+		if (is_info && !include_info)
+			return;
+
+		if (!Q_strcasecmp(severity, "ERROR"))
+			errors++;
+		else if (!Q_strcasecmp(severity, "WARN"))
+			warnings++;
+		else
+			infos++;
+
+		gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "[{}] {}\n", severity, problem);
+		if (fix && fix[0])
+			gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "      Suggestion: {}\n", fix);
+	};
+
+	// Deterministic dependency checks
+	if (g_dm_do_readyup->integer && !g_dm_do_warmup->integer) {
+		report("ERROR",
+			"g_dm_do_readyup is enabled while g_dm_do_warmup is disabled.",
+			"set g_dm_do_warmup 1");
+	}
+
+	if (g_dm_do_readyup->integer && (g_warmup_ready_percentage->value <= 0.f || g_warmup_ready_percentage->value > 1.f)) {
+		report("ERROR",
+			"g_warmup_ready_percentage must be in range (0.0, 1.0] when readyup is enabled.",
+			"set g_warmup_ready_percentage 0.51");
+	}
+
+	if (minplayers->integer > maxplayers->integer) {
+		report("ERROR",
+			"minplayers is greater than maxplayers.",
+			"set minplayers <= maxplayers");
+	}
+
+	if (maxplayers->integer <= 0) {
+		report("ERROR",
+			"maxplayers must be greater than zero.",
+			"set maxplayers 2");
+	}
+
+	if (g_vote_limit->integer < 0) {
+		report("ERROR",
+			"g_vote_limit cannot be negative.",
+			"set g_vote_limit 0");
+	}
+
+	// Context and no-op checks
+	if (!g_allow_voting->integer && g_allow_spec_vote->integer) {
+		report("WARN",
+			"g_allow_spec_vote is enabled while voting is globally disabled.",
+			"set g_allow_voting 1 or set g_allow_spec_vote 0");
+	}
+
+	if (!g_allow_voting->integer && g_allow_vote_midgame->integer) {
+		report("WARN",
+			"g_allow_vote_midgame is enabled while voting is globally disabled.",
+			"set g_allow_voting 1 or set g_allow_vote_midgame 0");
+	}
+
+	if (g_dm_do_readyup->integer && g_warmup_ready_percentage->value >= 0.99f) {
+		report("WARN",
+			"g_warmup_ready_percentage is very high; matches may stall waiting for nearly all players.",
+			"set g_warmup_ready_percentage between 0.50 and 0.80");
+	}
+
+	if (g_dm_overtime->integer > 0 && (GT(GT_DUEL) == 0)) {
+		report("INFO",
+			"g_dm_overtime is set but currently only applies to Duel.",
+			"Switch to Duel or leave as a preset for later.", true);
+	}
+
+	if ((GTF(GTF_ROUNDS) & GTF_ROUNDS) == 0) {
+		if (roundlimit->integer != 8) {
+			report("INFO",
+				"roundlimit is non-default in a non-round gametype.",
+				"No action needed unless this was unintended.", true);
+		}
+
+		if (roundtimelimit->integer != 2) {
+			report("INFO",
+				"roundtimelimit is non-default in a non-round gametype.",
+				"No action needed unless this was unintended.", true);
+		}
+
+		if (g_round_countdown->integer != 10) {
+			report("INFO",
+				"g_round_countdown is non-default in a non-round gametype.",
+				"No action needed unless this was unintended.", true);
+		}
+	} else {
+		if (roundlimit->integer <= 0) {
+			report("WARN",
+				"roundlimit is <= 0 in a round-based gametype.",
+				"set roundlimit 8");
+		}
+
+		if (roundtimelimit->value <= 0.f) {
+			report("WARN",
+				"roundtimelimit is <= 0 in a round-based gametype.",
+				"set roundtimelimit 2");
+		}
+
+		if (g_round_countdown->integer < 0) {
+			report("WARN",
+				"g_round_countdown is negative.",
+				"set g_round_countdown 10");
+		}
+	}
+
+	if (!g_allow_voting->integer && (g_vote_flags->integer != 0 || g_vote_limit->integer != 3)) {
+		report("INFO",
+			"Vote restriction cvars are customized while voting is disabled.",
+			"No action needed unless you expected votes to be active.", true);
+	}
+
+	if (!errors && !warnings && (!include_info || !infos))
+		gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "[OK] No issues found for current diagnostic mode.\n");
+
+	gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY,
+		"[MuffMode Doctor] Summary: {} error(s), {} warning(s), {} info message(s).\n\n",
+		errors, warnings, infos);
+}
+
 /*----------------------------------------------------------------*/
 
 // NEW VOTING CODE
@@ -4708,10 +4851,11 @@ cmds_t client_cmds[] = {
 	{"checkpoi",		Cmd_CheckPOI_f,			CF_ALLOW_SPEC | CF_CHEAT_PROTECT},
 	{"clear_ai_enemy",	Cmd_Clear_AI_Enemy_f,	CF_CHEAT_PROTECT},
 	{"cv",				Cmd_CallVote_f,			CF_ALLOW_DEAD | CF_ALLOW_SPEC},
-	{"drop",			Cmd_Drop_f,				CF_NONE},
-	{"drop_index",		Cmd_Drop_f,				CF_NONE},
-	{"endmatch",		Cmd_EndMatch_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
-	{"fm",				Cmd_FragMessages_f,		CF_ALLOW_SPEC | CF_ALLOW_DEAD},
+	{"drop", 			Cmd_Drop_f,				CF_NONE},
+	{"drop_index", 		Cmd_Drop_f,				CF_NONE},
+	{"doctor", 			Cmd_Doctor_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"endmatch", 		Cmd_EndMatch_f,			CF_ADMIN_ONLY | CF_ALLOW_INT | CF_ALLOW_SPEC},
+	{"fm", 				Cmd_FragMessages_f,		CF_ALLOW_SPEC | CF_ALLOW_DEAD},
 	{"follow",			Cmd_Follow_f,			CF_ALLOW_SPEC | CF_ALLOW_DEAD},
 	{"followkiller",	Cmd_FollowKiller_f,		CF_ALLOW_SPEC | CF_ALLOW_DEAD},
 	{"followleader",	Cmd_FollowLeader_f,		CF_ALLOW_SPEC | CF_ALLOW_DEAD},

@@ -2055,7 +2055,7 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 		if (RS(RS_QC))
 			damage = deathmatch->integer ? 4 : 6;
 		else if (deathmatch->integer && RS(RS_VANILLA_PLUS))
-			damage = 5;
+			damage = 4;
 		else
 			damage = deathmatch->integer ? 6 : 8;
 	}
