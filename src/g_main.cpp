@@ -1015,7 +1015,7 @@ static void InitGame() {
 	mercylimit = gi.cvar("mercylimit", "0", CVAR_NOFLAGS);
 	noplayerstime = gi.cvar("noplayerstime", "10", CVAR_NOFLAGS);
 
-	g_ruleset = gi.cvar("g_ruleset", G_Fmt("{}", (int)RS_MM).data(), CVAR_SERVERINFO);
+	g_ruleset = gi.cvar("g_ruleset", G_Fmt("{}", (int)RS_Q2RE).data(), CVAR_SERVERINFO);
 
 	password = gi.cvar("password", "", CVAR_USERINFO);
 	spectator_password = gi.cvar("spectator_password", "", CVAR_USERINFO);
