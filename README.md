@@ -197,6 +197,7 @@ Use **[command] [arg]** for the below listed admin commands:
  - **map_restart**: restarts current level and session, applies latches cvar changes
  - **gametype [gametype_name]**: changes gametype to selected option, then resets the level
  - **ruleset <q2re|mm|q3a|q2reb|qc>**: changes gameplay style
+ - **doctor [quick/full]**: read-only diagnostics command that reports cvar misconfigurations and risky combinations with suggested fixes
  - **readyall**: force all players to ready status (during readying warmup status)
  - **unreadyall**: force all players to NOT ready status (during readying warmup status)
 

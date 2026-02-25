@@ -3887,6 +3887,9 @@ void ExitLevel() {
 	MuffModeLog("DEBUG", "ExitLevel: calling ClientEndServerFrames");
 	ClientEndServerFrames();
 
+	// Prevent repeated ExitLevel calls on subsequent frames before the map change executes.
+	level.intermission_exit = false;
+
 	MuffModeLog("DEBUG", "ExitLevel: ClientEndServerFrames done, checking Duel_RemoveLoser");
 	// if we are running a duel, kick the loser to queue,
 	// which will automatically grab the next queued player and restart
