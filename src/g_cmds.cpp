@@ -2461,28 +2461,18 @@ static void Cmd_Boot_f(gentity_t *ent) {
 }
 
 static void Cmd_Doctor_f(gentity_t *ent) {
-	bool include_info = false;
-
 	if (gi.argc() > 1) {
-		const char *mode = gi.argv(1);
-		if (!Q_strcasecmp(mode, "full"))
-			include_info = true;
-		else if (Q_strcasecmp(mode, "quick")) {
-			gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} [quick|full]\n", gi.argv(0));
-			return;
-		}
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {}\n", gi.argv(0));
+		return;
 	}
 
 	int errors = 0;
 	int warnings = 0;
 	int infos = 0;
 
-	gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "\n[MuffMode Doctor] Running {} diagnostics...\n", include_info ? "full" : "quick");
+	gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "\n[MuffMode Doctor] Running diagnostics...\n");
 
-	auto report = [&](const char *severity, const char *problem, const char *fix, bool is_info = false) {
-		if (is_info && !include_info)
-			return;
-
+	auto report = [&](const char *severity, const char *problem, const char *fix) {
 		if (!Q_strcasecmp(severity, "ERROR"))
 			errors++;
 		else if (!Q_strcasecmp(severity, "WARN"))
@@ -2548,26 +2538,26 @@ static void Cmd_Doctor_f(gentity_t *ent) {
 	if (g_dm_overtime->integer > 0 && (GT(GT_DUEL) == 0)) {
 		report("INFO",
 			"g_dm_overtime is set but currently only applies to Duel.",
-			"Switch to Duel or leave as a preset for later.", true);
+			"Switch to Duel or leave as a preset for later.");
 	}
 
 	if ((GTF(GTF_ROUNDS) & GTF_ROUNDS) == 0) {
 		if (roundlimit->integer != 8) {
 			report("INFO",
 				"roundlimit is non-default in a non-round gametype.",
-				"No action needed unless this was unintended.", true);
+				"No action needed unless this was unintended.");
 		}
 
 		if (roundtimelimit->integer != 2) {
 			report("INFO",
 				"roundtimelimit is non-default in a non-round gametype.",
-				"No action needed unless this was unintended.", true);
+				"No action needed unless this was unintended.");
 		}
 
 		if (g_round_countdown->integer != 10) {
 			report("INFO",
 				"g_round_countdown is non-default in a non-round gametype.",
-				"No action needed unless this was unintended.", true);
+				"No action needed unless this was unintended.");
 		}
 	} else {
 		if (roundlimit->integer <= 0) {
@@ -2592,11 +2582,11 @@ static void Cmd_Doctor_f(gentity_t *ent) {
 	if (!g_allow_voting->integer && (g_vote_flags->integer != 0 || g_vote_limit->integer != 3)) {
 		report("INFO",
 			"Vote restriction cvars are customized while voting is disabled.",
-			"No action needed unless you expected votes to be active.", true);
+			"No action needed unless you expected votes to be active.");
 	}
 
-	if (!errors && !warnings && (!include_info || !infos))
-		gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "[OK] No issues found for current diagnostic mode.\n");
+	if (!errors && !warnings && !infos)
+		gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY, "[OK] No issues found.\n");
 
 	gi.LocClient_Print(ent, PRINT_HIGH | PRINT_NO_NOTIFY,
 		"[MuffMode Doctor] Summary: {} error(s), {} warning(s), {} info message(s).\n\n",
