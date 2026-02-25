@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.21.93";
+constexpr const char *GAMEMOD_VERSION = "0.21.94";
 
 //==================================================================
 
@@ -3653,6 +3653,7 @@ struct gclient_t {
 	int32_t			breather_sound;
 
 	int32_t			machinegun_shots; // for weapon raising
+	int32_t			chaingun_shots;   // for alternating damage (4/5)
 
 	// animation vars
 	int32_t			anim_end;

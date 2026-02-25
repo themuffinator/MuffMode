@@ -2895,6 +2895,7 @@ void ClientSpawn(gentity_t *ent) {
 	client->pers = saved;
 	client->resp = resp;
 	client->sess = sess;
+	client->chaingun_shots = 1; // first shot deals 5 damage (4 + (1 & 1))
 
 	// on a new, fresh spawn (always in DM, clear inventory
 	// or new spawns in SP/coop)

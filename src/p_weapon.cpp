@@ -49,11 +49,13 @@ static inline void Ruleset_MachinegunSpread(int &hspread, int &vspread) {
 	}
 }
 
-static inline int Ruleset_ChaingunDamage() {
-	if (RS(RS_QC))
-		return deathmatch->integer ? 4 : 6;
+static inline int Ruleset_ChaingunDamage(gentity_t *ent) {
+	if (RS(RS_QC) && deathmatch->integer)
+		return 4 + (ent->client->chaingun_shots++ & 1);
 	if (RS(RS_VANILLA_PLUS) && deathmatch->integer)
-		return 4;
+		return 4 + (ent->client->chaingun_shots++ & 1);
+	if (RS(RS_QC))
+		return 6;
 	return deathmatch->integer ? 6 : 8;
 }
 
@@ -2158,7 +2160,7 @@ static void Weapon_Chaingun_Fire(gentity_t *ent) {
 #else
 	{
 #endif
-		damage = Ruleset_ChaingunDamage();
+		damage = Ruleset_ChaingunDamage(ent);
 	}
 	int	  kick = 2;
 
