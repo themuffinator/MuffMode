@@ -744,6 +744,8 @@ void ChangeGametype(gametype_t gt) {
 		// when Vote_Pass_Gametype() has already handled the map change properly
 		gt_g_gametype = g_gametype->modified_count;
 		gt_check = (gametype_t)g_gametype->integer;
+		gt_teamplay = teamplay->modified_count;
+		gt_ctf = ctf->modified_count;
 	}
 }
 
