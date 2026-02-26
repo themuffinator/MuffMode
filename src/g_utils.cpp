@@ -533,6 +533,12 @@ bool KillBox(gentity_t *ent, bool from_spawning, mod_id_t mod, bool bsp_clipping
 
 	num = gi.BoxEntities(ent->absmin, ent->absmax, touch, MAX_ENTITIES, AREA_SOLID, KillBox_BoxFilter, nullptr);
 
+	if (num > 0)
+		MuffModeLog("TELEFRAG", "KillBox: %d entities in box (spawner=%s, from_spawning=%d, mod=%d)",
+			num,
+			(ent->client && ent->client->pers.netname[0]) ? ent->client->pers.netname : ent->classname ? ent->classname : "?",
+			(int)from_spawning, (int)mod.id);
+
 	for (i = 0; i < num; i++) {
 		hit = touch[i];
 
@@ -558,6 +564,12 @@ bool KillBox(gentity_t *ent, bool from_spawning, mod_id_t mod, bool bsp_clipping
 			ent->clipmask &= ~CONTENTS_PLAYER;
 			continue;
 		}
+
+		if (hit->client)
+			MuffModeLog("TELEFRAG", "KillBox: '%s' telefragging '%s' (mod=%d, from_spawning=%d)",
+				(ent->client && ent->client->pers.netname[0]) ? ent->client->pers.netname : "?",
+				hit->client->pers.netname,
+				(int)mod.id, (int)from_spawning);
 
 		T_Damage(hit, ent, ent, vec3_origin, ent->s.origin, vec3_origin, 100000, 0, DAMAGE_NO_PROTECTION, mod);
 	}
