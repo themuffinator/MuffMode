@@ -883,6 +883,9 @@ void GT_Changes() {
 	//TODO: save ent string so we can simply reload it and Match_Reset
 	//gi.AddCommandString("map_restart");
 
+	MuffModeLog("DEBUG", "GT_Changes: issuing gamemap '%s' (gt=%d gt_check=%d gt_g_gametype=%d g_gametype->modified_count=%d teamplay=%d ctf=%d in_frame=%d)",
+		level.mapname, (int)gt, (int)gt_check, gt_g_gametype, g_gametype->modified_count,
+		teamplay->integer, ctf->integer, level.in_frame);
 	gi.AddCommandString(G_Fmt("gamemap {}\n", level.mapname).data());
 
 	// Return immediately after queuing map change to avoid rendering state corruption.
@@ -3786,6 +3789,10 @@ ExitLevel
 =============
 */
 void ExitLevel() {
+	MuffModeLog("DEBUG", "ExitLevel: entry - fading=%d exit=%d fade_time=%.2f level_time=%.2f in_frame=%d",
+		level.intermission_fading, level.intermission_exit,
+		level.intermission_fade_time.seconds(), level.time.seconds(),
+		level.in_frame);
 	const char* next_map = level.changemap ? level.changemap : level.nextmap;
 	if (next_map && next_map[0]) {
 		MuffModeLog("MAP", "Exiting level '%s', next map: '%s'", level.mapname, next_map);
@@ -4099,6 +4106,8 @@ Advances the world by 0.1 seconds
 ================
 */
 static inline void G_RunFrame_(bool main_loop) {
+	if (level.in_frame)
+		MuffModeLog("ERROR", "G_RunFrame_: re-entrant call detected! (main_loop=%d)", main_loop);
 	level.in_frame = true;
 
 	if (level.timeout_in_place > 0_ms && level.timeout_ent) {
