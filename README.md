@@ -319,6 +319,8 @@ Available config files:
 - `gt-NADEFEST.cfg` - Nade Fest settings
 
 These config files should be placed in the main game directory and can contain any server commands, cvar settings, map lists, or other configurations specific to that gametype. The system ensures configs are only executed when the gametype actually changes, not on every map load.
+
+For a complete set of ready-to-use server configs with per-gametype settings, see the [MuffMode Server Configs repository](https://github.com/ozy24/muffmode-server-configs).
  - **g_gametype**: cvar sets gametype by index number, this is the current list:
 	0: Campaign (not used at present, use deathmatch 0 as usual)
 	1. Free for All
