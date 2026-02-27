@@ -224,7 +224,7 @@ Use **[command] [arg]** for the below listed client commands:
  - **callvote/cv**: calls a vote (use vote commands).
  - **vote [yes/no]**: vote or veto a callvote.
  - **maplist**: show server map list.
- - **motd"": print the message of the day.
+ - **motd**: print the message of the day.
  - **mymap**: add a map to the queue, must be a valid map from map list.
  - **team [arg]**: selects a team, args:
 	- **blue/b**: select blue team
@@ -334,9 +334,8 @@ For a complete set of ready-to-use server configs with per-gametype settings, se
 	9. Last Man Standing
 	10. Horde
 	11. ProBall (WIP)
-	12. Race (WIP)
-	13. Instagib
-	14. Nade Fest
+	12. Instagib
+	13. Nade Fest
  - **g_horde_starting_wave**: sets the starting wave number for Horde mode (default 1)
  - **g_inactivity**: Values above 0 enables an inactivity timer for players, specifying number of seconds since last input to point of flagging the player as inactive. A warning is sent to the player 10 seconds before triggering and once triggered, the player is moved to spectators. Inactive clients are noted as such using the 'players' command. (default: 120)
  - **g_instagib_splash**: enables a non-damaging explosion from railgun shots in instagib, allows for rail jumping or knocking foes about (default 0)
@@ -563,15 +562,15 @@ Some entity overrides are included which add some subtle ambient sounds, mover s
 	Auto-removed in deathmatch (except horde mode).
 	ONCE : will be removed after firing once
 	
-## TODO:
+## Roadmap:
 - tastyspleen.net's mymap system: add support for dm flags
-- gametype: Freeze Tag (WIP)
+- Freeze Tag gametype (WIP)
 - Server-side player configs, stats, Elo, ranked matches, Elo team balancing (WIP)
 - Gladiator bots
 - Menu overhaul, adding voting, full admin controls, mymap, player config
-- Quake II Santuary community for testing. A shout out particularly to Sata, TurboPtys_drk and Jobe for their help.
 
 ## Credits:
+- Quake II Sanctuary community for testing. A shout out particularly to Sata, TurboPtys_drk and Jobe for their help.
 - The Stingy Hat Games YouTube channel for their excellent modding tutorial, without it I would never be able to compile the damned source!
 - Nightdive team for the impressive remaster, also some on the team who patiently answered all my annoying modding questions (particularly Paril, sponge, Edward850)
 - Paril for some of the Horde Mode code (really just the spawn code), [link to Paril's mod](https://github.com/Paril/q2horde) 
