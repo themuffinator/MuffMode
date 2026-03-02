@@ -2300,6 +2300,8 @@ void SP_worldspawn(gentity_t *ent) {
 
 	if (st.nextmap)
 		Q_strlcpy(level.nextmap, st.nextmap, sizeof(level.nextmap));
+	else
+		level.nextmap[0] = '\0';  // Clear stale value (e.g. from map vote)
 
 	// make some data visible to the server
 
