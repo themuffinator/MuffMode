@@ -3369,6 +3369,12 @@ void Match_End() {
 			if (!first_map[0])
 				Q_strlcpy(first_map, map, sizeof(first_map));
 		}
+
+		// Current map not in g_map_list (e.g. voted from pool), rejoin at first map
+		if (first_map[0]) {
+			BeginIntermission(CreateTargetChangeLevel(first_map));
+			return;
+		}
 	}
 
 	if (level.nextmap[0]) // go to a specific map

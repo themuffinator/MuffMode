@@ -20,6 +20,16 @@ jobs:
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg/downloads
+            vcpkg/buildtrees
+            vcpkg/packages
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('src/vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+
       - name: Install vcpkg dependencies
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static
