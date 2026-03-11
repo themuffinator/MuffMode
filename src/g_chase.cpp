@@ -78,7 +78,8 @@ void UpdateChaseCam(gentity_t *ent) {
 		ent->client->ps.pmove.velocity = targ->client->ps.pmove.velocity;
 		ent->client->ps.pmove.pm_time = targ->client->ps.pmove.pm_time;
 		ent->client->ps.pmove.gravity = targ->client->ps.pmove.gravity;
-		ent->client->ps.pmove.delta_angles = targ->client->ps.pmove.delta_angles;
+		// Zero delta_angles - view is fully authoritative, avoids jitter from spectator cmd_angles mismatch
+		ent->client->ps.pmove.delta_angles = {};
 		ent->client->ps.pmove.viewheight = targ->client->ps.pmove.viewheight;
 		
 		ent->client->pers.hand = targ->client->pers.hand;
@@ -90,9 +91,8 @@ void UpdateChaseCam(gentity_t *ent) {
 		angles = targ->client->v_angle;
 		AngleVectors(angles, forward, right, nullptr);
 		forward.normalize();
-		o = ownerv;
-		trace = gi.traceline(ownerv, o, targ, MASK_SOLID);
-		goal = trace.endpos;
+		// Align ent origin with pmove (view position) for consistency
+		goal = targ->client->ps.pmove.origin;
 	}
 	// vanilla chasecam code
 	else {
@@ -150,7 +150,8 @@ void UpdateChaseCam(gentity_t *ent) {
 		ent->client->ps.pmove.pm_type = PM_FREEZE;
 
 	ent->s.origin = goal;
-	ent->client->ps.pmove.delta_angles = targ->client->v_angle - ent->client->resp.cmd_angles;
+	if (g_eyecam->integer != 1)
+		ent->client->ps.pmove.delta_angles = targ->client->v_angle - ent->client->resp.cmd_angles;
 
 	if (targ->deadflag) {
 		ent->client->ps.viewangles[ROLL] = 40;
