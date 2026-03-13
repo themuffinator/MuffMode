@@ -1352,6 +1352,10 @@ void G_Menu_ChaseCam(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_HostInfo(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_ServerInfo(gentity_t *ent, menu_hnd_t *p);
 
+static void G_Menu_ReadyUp(gentity_t *ent, menu_hnd_t *p) {
+	Cmd_ReadyUp_f(ent);
+}
+
 static const int jmenu_hostname = 0;
 static const int jmenu_gametype = 1;
 static const int jmenu_level = 2;
@@ -1361,6 +1365,7 @@ static const int jmenu_teams_join_red = 5;
 static const int jmenu_teams_join_blue = 6;
 static const int jmenu_teams_spec = 7;
 static const int jmenu_teams_chase = 8;
+static const int jmenu_teams_readyup = 9;
 static const int jmenu_teams_hostinfo = 10;
 static const int jmenu_teams_svinfo = 11;
 static const int jmenu_teams_player = 12;
@@ -1370,6 +1375,7 @@ static const int jmenu_teams_admin = 14;
 static const int jmenu_free_join = 5;
 static const int jmenu_free_spec = 7;
 static const int jmenu_free_chase = 8;
+static const int jmenu_free_readyup = 9;
 static const int jmenu_free_hostinfo = 10;
 static const int jmenu_free_svinfo = 11;
 static const int jmenu_free_player = 12;
@@ -1389,13 +1395,11 @@ const menu_t teams_join_menu[] = {
 	{ "$g_pc_join_blue_team", MENU_ALIGN_LEFT, G_Menu_Join_Team_Blue },
 	{ "Spectate", MENU_ALIGN_LEFT, G_Menu_Join_Team_Spec },
 	{ "$g_pc_chase_camera", MENU_ALIGN_LEFT, G_Menu_ChaseCam },
-	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },  // Ready Up (set dynamically)
 	{ "Host Info", MENU_ALIGN_LEFT, G_Menu_HostInfo },
 	{ "Match Info", MENU_ALIGN_LEFT, G_Menu_ServerInfo },
-	//{ "Game Rules", MENU_ALIGN_LEFT, G_Menu_GameRules },
 	{ "Player Stats", MENU_ALIGN_LEFT, G_Menu_PMStats },
 	{ "Call a Vote", MENU_ALIGN_LEFT, G_Menu_CallVote },
-	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
@@ -1412,13 +1416,11 @@ const menu_t free_join_menu[] = {
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "Spectate", MENU_ALIGN_LEFT, G_Menu_Join_Team_Spec },
 	{ "$g_pc_chase_camera", MENU_ALIGN_LEFT, G_Menu_ChaseCam },
-	{ "", MENU_ALIGN_LEFT, nullptr },
+	{ "", MENU_ALIGN_LEFT, nullptr },  // Ready Up (set dynamically)
 	{ "Host Info", MENU_ALIGN_LEFT, G_Menu_HostInfo },
 	{ "Match Info", MENU_ALIGN_LEFT, G_Menu_ServerInfo },
-	//{ "Game Rules", MENU_ALIGN_LEFT, G_Menu_GameRules },
 	{ "Player Stats", MENU_ALIGN_LEFT, G_Menu_PMStats },
 	{ "Call a Vote", MENU_ALIGN_LEFT, G_Menu_CallVote },
-	{ "", MENU_ALIGN_CENTER, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_LEFT, nullptr },
 	{ "", MENU_ALIGN_CENTER, nullptr },
@@ -1888,6 +1890,15 @@ static void G_Menu_Join_Update(gentity_t *ent) {
 		Q_strlcpy(entries[index].text, "$g_pc_leave_chase_camera", sizeof(entries[index].text));
 	else
 		Q_strlcpy(entries[index].text, "$g_pc_chase_camera", sizeof(entries[index].text));
+
+	index = Teams() ? jmenu_teams_readyup : jmenu_free_readyup;
+	if (g_dm_do_readyup->integer && level.match_state == matchst_t::MATCH_WARMUP_READYUP) {
+		Q_strlcpy(entries[index].text, ent->client->resp.ready ? "Not Ready" : "Ready Up", sizeof(entries[index].text));
+		entries[index].SelectFunc = G_Menu_ReadyUp;
+	} else {
+		entries[index].text[0] = '\0';
+		entries[index].SelectFunc = nullptr;
+	}
 
 	G_Menu_SetHostName(entries + jmenu_hostname);
 	G_Menu_SetGametypeName(entries + jmenu_gametype);
