@@ -3230,12 +3230,8 @@ ClientEndServerFrames
 static void ClientEndServerFrames() {
 	// calc the player views now that all pushing
 	// and damage has been added
-	if (GTF(GTF_CTF) && level.time.frames() < 60)
-		MuffModeLog("DEBUG", "ClientEndServerFrames: start (frame=%lld, gt=ctf)", (long long)level.time.frames());
 	for (auto ec : active_clients())
 		ClientEndServerFrame(ec);
-	if (GTF(GTF_CTF) && level.time.frames() < 60)
-		MuffModeLog("DEBUG", "ClientEndServerFrames: done (frame=%lld)", (long long)level.time.frames());
 }
 
 /*
@@ -4279,8 +4275,6 @@ static inline void G_RunFrame_(bool main_loop) {
 
 	// build the playerstate_t structures for all players
 	ClientEndServerFrames();
-	if (GTF(GTF_CTF) && level.time.frames() < 60)
-		MuffModeLog("DEBUG", "G_RunFrame_: ClientEndServerFrames returned (frame=%lld)", (long long)level.time.frames());
 
 	// [Paril-KEX] if not in intermission and player 1 is loaded in
 	// the game as an entity, increase timer on current entry

@@ -2086,11 +2086,7 @@ static void G_InitStatusbar() {
 		sb.ifstat(STAT_CROSSHAIR_ID_VIEW_COLOR).xv(156).yb(-118).pic(STAT_CROSSHAIR_ID_VIEW_COLOR).endifstat();	//106 -160 //96 -58
 	}
 
-	if (GTF(GTF_CTF))
-		MuffModeLog("DEBUG", "Statusbar layout: about to set CS_STATUSBAR (map=%s, gt=ctf)", level.mapname);
 	gi.configstring(CS_STATUSBAR, sb.sb.str().c_str());
-	if (GTF(GTF_CTF))
-		MuffModeLog("DEBUG", "Statusbar layout: CS_STATUSBAR set done");
 }
 
 void GT_SetLongName(void) {
