@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "g_local.h"
+#include "g_debug_log.h"
 #include "monsters/m_player.h"
 #include "bots/bot_includes.h"
 
@@ -1271,6 +1272,8 @@ void ClientEndServerFrame(gentity_t *ent) {
 	// no player exists yet (load game)
 	if (!ent->client->pers.spawned)
 		return;
+	if (GTF(GTF_CTF) && level.framenum < 60)
+		MuffModeLog("DEBUG", "ClientEndServerFrame: start (client=%d)", ent->s.number - 1);
 
 	float bobtime, bobtime_run;
 	gentity_t *e = ent;	// g_eyecam->integer &&ent->client->follow_target ? ent->client->follow_target : ent;
@@ -1507,4 +1510,6 @@ void ClientEndServerFrame(gentity_t *ent) {
 		if (!clipped_player)
 			ent->clipmask |= CONTENTS_PLAYER;
 	}
+	if (GTF(GTF_CTF) && level.framenum < 60)
+		MuffModeLog("DEBUG", "ClientEndServerFrame: done (client=%d)", ent->s.number - 1);
 }
