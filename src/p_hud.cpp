@@ -1192,8 +1192,8 @@ static void CTF_SetStats(gentity_t *ent, bool blink) {
 	gentity_t	*e;
 
 	if (!(GTF(GTF_CTF))) return;
-	if (level.framenum < 60)
-		MuffModeLog("DEBUG", "CTF_SetStats: start (client=%d, framenum=%d)", ent->s.number - 1, level.framenum);
+	if (level.time.frames() < 60)
+		MuffModeLog("DEBUG", "CTF_SetStats: start (client=%d, frame=%lld)", ent->s.number - 1, (long long)level.time.frames());
 
 	// figure out what icon to display for team logos
 	// three states:
@@ -1289,7 +1289,7 @@ static void CTF_SetStats(gentity_t *ent, bool blink) {
 		ent->client->pers.inventory[IT_FLAG_RED] &&
 		(blink))
 		ent->client->ps.stats[STAT_CTF_FLAG_PIC] = ii_teams_red_default;
-	if (level.framenum < 60)
+	if (level.time.frames() < 60)
 		MuffModeLog("DEBUG", "CTF_SetStats: done (client=%d)", ent->s.number - 1);
 }
 
@@ -1472,8 +1472,8 @@ void G_SetStats(gentity_t *ent) {
 	bool			minhud = (g_instagib->integer || GT(GT_INSTAGIB)) || (g_nadefest->integer || GT(GT_NADEFEST));
 	int32_t			img_index = ent->client->pers.skin_icon_index;
 
-	if (GTF(GTF_CTF) && level.framenum < 60)
-		MuffModeLog("DEBUG", "G_SetStats: start CTF path (client=%d, framenum=%d)", ent->s.number - 1, level.framenum);
+	if (GTF(GTF_CTF) && level.time.frames() < 60)
+		MuffModeLog("DEBUG", "G_SetStats: start CTF path (client=%d, frame=%lld)", ent->s.number - 1, (long long)level.time.frames());
 
 	//
 	// health
