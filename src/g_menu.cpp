@@ -443,6 +443,7 @@ void G_Menu_CallVote_FriendlyFire_Update(gentity_t *ent);
 void G_Menu_CallVote_FriendlyFire_Selection(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p);
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p);
+void G_Menu_CallVote_ReadyAll(gentity_t *ent, menu_hnd_t *p);
 
 void G_Menu_CallVote_Map_Selection(gentity_t *ent, menu_hnd_t *p);
 static void G_Menu_CallVote_Map_PrevPage(gentity_t *ent, menu_hnd_t *p);
@@ -1018,6 +1019,11 @@ void G_Menu_CallVote_Cointoss(gentity_t *ent, menu_hnd_t *p) {
 void G_Menu_CallVote_Random(gentity_t *ent, menu_hnd_t *p) {
 }
 
+void G_Menu_CallVote_ReadyAll(gentity_t *ent, menu_hnd_t *p) {
+	P_Menu_Close(ent);
+	MenuVote_Initiate(ent, "readyall", nullptr);
+}
+
 static void G_Menu_CallVote_Update(gentity_t *ent) {
 	menu_t *entries = ent->client->menu->entries;
 	
@@ -1095,9 +1101,29 @@ static void G_Menu_CallVote_Update(gentity_t *ent) {
 		entries[friendlyfire_index].SelectFunc = nullptr;
 		Q_strlcpy(entries[friendlyfire_index].text, "Friendly Fire: N/A", sizeof(entries[friendlyfire_index].text));
 	}
-	
-	// Clear any entries after friendly fire
-	for (int i = friendlyfire_index + 1; i < 15; i++) {
+
+	// Shuffle Teams option - only available for team gametypes
+	int shuffle_index = friendlyfire_index + 1;
+	if (Teams()) {
+		entries[shuffle_index].SelectFunc = G_Menu_CallVote_ShuffleTeams;
+		Q_strlcpy(entries[shuffle_index].text, "Shuffle Teams", sizeof(entries[shuffle_index].text));
+	} else {
+		entries[shuffle_index].SelectFunc = nullptr;
+		Q_strlcpy(entries[shuffle_index].text, "Shuffle Teams: N/A", sizeof(entries[shuffle_index].text));
+	}
+
+	// Ready All option - only available during ready-up warmup
+	int readyall_index = shuffle_index + 1;
+	if (g_dm_do_readyup->integer && level.match_state == matchst_t::MATCH_WARMUP_READYUP) {
+		entries[readyall_index].SelectFunc = G_Menu_CallVote_ReadyAll;
+		Q_strlcpy(entries[readyall_index].text, "Ready All", sizeof(entries[readyall_index].text));
+	} else {
+		entries[readyall_index].SelectFunc = nullptr;
+		Q_strlcpy(entries[readyall_index].text, "Ready All: N/A", sizeof(entries[readyall_index].text));
+	}
+
+	// Clear any entries after ready all
+	for (int i = readyall_index + 1; i < 15; i++) {
 		entries[i].SelectFunc = nullptr;
 		entries[i].text[0] = '\0';
 	}

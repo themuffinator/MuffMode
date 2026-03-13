@@ -10,7 +10,7 @@
 constexpr const char *GAMEVERSION = "baseq2";
 
 constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.22.02";
+constexpr const char *GAMEMOD_VERSION = "0.22.03";
 
 //==================================================================
 
@@ -2605,6 +2605,7 @@ void Vote_Pass_RestartMatch();
 void Vote_Pass_Gametype();
 void Vote_Pass_NextMap();
 void Vote_Pass_ShuffleTeams();
+void Vote_Pass_ReadyAll();
 void Vote_Pass_Cointoss();
 void Vote_Pass_Random();
 void Vote_Pass_Timelimit();
