@@ -152,8 +152,8 @@ static inline int Ruleset_HyperBlasterDamage() {
 }
 
 static inline int Ruleset_RailgunDamage() {
-	if (RS(RS_QC))
-		return 80;
+	if (RS(RS_QC) || RS(RS_VANILLA_PLUS))
+		return 90;
 	return deathmatch->integer ? 100 : 150;
 }
 
