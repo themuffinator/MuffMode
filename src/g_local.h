@@ -9,8 +9,8 @@
 // the "gameversion" client command will print this plus compile date
 constexpr const char *GAMEVERSION = "baseq2";
 
-constexpr const char *GAMEMOD_TITLE = "Muff Mode BETA";
-constexpr const char *GAMEMOD_VERSION = "0.22.03";
+constexpr const char *GAMEMOD_TITLE = "Muff Mode";
+constexpr const char *GAMEMOD_VERSION = "0.22.10";
 
 //==================================================================
 
@@ -2267,6 +2267,13 @@ using save_die_t = save_data_t<void(*)(gentity_t *self, gentity_t *inflictor, ge
 constexpr gtime_t DUCK_INTERVAL = 5000_ms;
 
 extern game_locals_t  game;
+
+constexpr int32_t G_RULESET_HEALTH_CAP = 200;
+constexpr int32_t G_RULESET_ARMOR_CAP = 150;
+[[nodiscard]] inline bool G_RulesetHealthArmorCap() {
+	return game.ruleset == RS_VANILLA_PLUS || game.ruleset == RS_QC;
+}
+
 extern level_locals_t level;
 extern game_export_t  globals;
 extern spawn_temp_t	  st;
@@ -2605,6 +2612,7 @@ void Vote_Pass_RestartMatch();
 void Vote_Pass_Gametype();
 void Vote_Pass_NextMap();
 void Vote_Pass_ShuffleTeams();
+void Vote_Pass_ReadyAll();
 void Vote_Pass_Cointoss();
 void Vote_Pass_Random();
 void Vote_Pass_Timelimit();

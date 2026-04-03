@@ -2301,7 +2301,7 @@ void SP_worldspawn(gentity_t *ent) {
 	if (st.nextmap)
 		Q_strlcpy(level.nextmap, st.nextmap, sizeof(level.nextmap));
 	else
-		level.nextmap[0] = '\0'; // Clear stale value when map has no worldspawn nextmap key
+		level.nextmap[0] = '\0'; // Clear stale value when map has no worldspawn nextmap (e.g. vote)
 
 	// make some data visible to the server
 

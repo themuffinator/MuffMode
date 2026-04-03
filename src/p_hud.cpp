@@ -425,6 +425,9 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 				cl->ping > 999 ? 999 : cl->ping,
 				cl_ent->client->pers.inventory[IT_FLAG_BLUE] ? "sbfctf2" : "\"\"");
 
+			if (level.captain[TEAM_RED] == cl_ent)
+				fmt::format_to(std::back_inserter(string),
+					FMT_STRING("xv -64 yv {} string2 \"*\" "), ty);
 			if (level.match_state == MATCH_WARMUP_READYUP && (cl->resp.ready || cl->sess.is_a_bot))
 				fmt::format_to(std::back_inserter(string),
 					FMT_STRING("xv -56 yv {} picn {} "), ty - 2, "wheel/p_compass_selected");
@@ -452,6 +455,9 @@ void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer) {
 				cl->ping > 999 ? 999 : cl->ping,
 				cl_ent->client->pers.inventory[IT_FLAG_RED] ? "sbfctf1" : "\"\"");
 
+			if (level.captain[TEAM_BLUE] == cl_ent)
+				fmt::format_to(std::back_inserter(string),
+					FMT_STRING("xv 174 yv {} string2 \"*\" "), ty);
 			if (level.match_state == MATCH_WARMUP_READYUP && (cl->resp.ready || cl->sess.is_a_bot))
 				fmt::format_to(std::back_inserter(string),
 					FMT_STRING("xv 182 yv {} picn {} "), ty - 2, "wheel/p_compass_selected");

@@ -2903,15 +2903,20 @@ void Vote_Pass_NextMap() {
 }
 
 void Vote_Pass_ShuffleTeams() {
+	if (!Teams()) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Shuffle vote failed: not a team gametype.\n");
+		return;
+	}
 	TeamShuffle();
 	Match_Reset();
 	gi.LocBroadcast_Print(PRINT_HIGH, "Teams have been shuffled.\n");
 }
 
 static bool Vote_Val_ShuffleTeams(gentity_t *ent) {
-	if (!Teams())
+	if (!Teams()) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Shuffle teams is only available in team gametypes.\n");
 		return false;
-
+	}
 	return true;
 }
 
@@ -3008,6 +3013,23 @@ static bool Vote_Val_Scorelimit(gentity_t *ent) {
 
 static void Vote_Pass_BalanceTeams() {
 	TeamBalance(true);
+}
+
+void Vote_Pass_ReadyAll() {
+	if (!g_dm_do_readyup->integer || level.match_state != matchst_t::MATCH_WARMUP_READYUP) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Ready all vote failed: not in ready-up warmup.\n");
+		return;
+	}
+	ReadyAll();
+	gi.LocBroadcast_Print(PRINT_HIGH, "All players have been readied.\n");
+}
+
+static bool Vote_Val_ReadyAll(gentity_t *ent) {
+	if (!g_dm_do_readyup->integer || level.match_state != matchst_t::MATCH_WARMUP_READYUP) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Ready all is only available during ready-up warmup.\n");
+		return false;
+	}
+	return true;
 }
 
 static bool Vote_Val_BalanceTeams(gentity_t *ent) {
@@ -3279,6 +3301,7 @@ vcmds_t vote_cmds[] = {
 	{"powerups",				Vote_Val_Powerups,		Vote_Pass_Powerups,		4096,	2,	"<0/1>",							"enables or disables powerups"},
 	{"friendlyfire",			Vote_Val_FriendlyFire,	Vote_Pass_FriendlyFire,	8192,	2,	"<0/1>",							"enables or disables friendly fire (team modes only)"},
 	{"handicap",				Vote_Val_Handicap,		Vote_Pass_Handicap,		16384,	4,	"<player> <weapon> <on|off>",		"restricts weapons for a player in duel mode"},
+	{"readyall",				Vote_Val_ReadyAll,		Vote_Pass_ReadyAll,		32768,	1,	"",									"ready all players (during ready-up warmup)"},
 };
 
 /*

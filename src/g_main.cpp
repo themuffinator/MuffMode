@@ -3370,7 +3370,7 @@ void Match_End() {
 				Q_strlcpy(first_map, map, sizeof(first_map));
 		}
 
-		// Current map not in g_map_list (e.g. voted from pool), rejoin at first map
+		// Current map not in g_map_list (e.g. voted from pool) - rejoin rotation at first map
 		if (first_map[0]) {
 			BeginIntermission(CreateTargetChangeLevel(first_map));
 			return;
