@@ -137,7 +137,7 @@ When debug damage override is active, `damage` is externally set; ruleset still 
 
 ### Damage (`Ruleset_RailgunDamage`)
 
-- QC / VANILLA_PLUS: `85`
+- QC / VANILLA_PLUS: `90`
 - All others: `100` (DM) / `150` (non-DM)
 
 ### Kick (`Ruleset_RailgunKick`)
