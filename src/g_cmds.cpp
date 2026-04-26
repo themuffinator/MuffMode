@@ -2612,10 +2612,8 @@ void Vote_Pass_Map() {
 	}
 
 	Q_strlcpy(level.nextmap, level.vote_state.arg.c_str(), sizeof(level.nextmap));
-	level.changemap = level.nextmap;
-	MuffModeLog("DEBUG", "Vote_Pass_Map: calling ExitLevel for map '%s'", level.nextmap);
-	ExitLevel();
-	MuffModeLog("DEBUG", "Vote_Pass_Map: ExitLevel returned");
+	MuffModeLog("DEBUG", "Vote_Pass_Map: queuing gamemap for '%s'", level.nextmap);
+	gi.AddCommandString(G_Fmt("gamemap \"{}\"\n", level.nextmap).data());
 }
 
 // Helper function to validate a map name using two-tier system:
@@ -2712,6 +2710,15 @@ void Vote_Pass_Gametype() {
 	MuffModeLog("DEBUG", "Vote_Pass_Gametype: enter, arg='%s', gt=%d", level.vote_state.arg.data(), (int)gt);
 	if (gt == GT_NONE) {
 		MuffModeLog("DEBUG", "Vote_Pass_Gametype: GT_NONE, aborting");
+		return;
+	}
+
+	// Re-check votability at execution time in case g_votable_gametypes changed
+	// during the 3-second PASSED->EXECUTING window, or the vote arrived via the
+	// menu path which does not run val_func.
+	if (!IsGametypeVotable(gt)) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Gametype vote rejected: gametype is no longer votable.\n");
+		MuffModeLog("VOTE", "Vote_Pass_Gametype: gametype %d rejected by IsGametypeVotable at execution", (int)gt);
 		return;
 	}
 
@@ -2865,6 +2872,15 @@ static void Vote_Pass_Ruleset() {
 	ruleset_t rs = RS_IndexFromString(level.vote_state.arg.data());
 	if (rs == ruleset_t::RS_NONE)
 		return;
+
+	// Re-check votability at execution time in case g_votable_rulesets changed
+	// during the 3-second PASSED->EXECUTING window, or the vote arrived via the
+	// menu path which does not run val_func.
+	if (!IsRulesetVotable(rs)) {
+		gi.LocBroadcast_Print(PRINT_HIGH, "Ruleset vote rejected: ruleset is no longer votable.\n");
+		MuffModeLog("VOTE", "Vote_Pass_Ruleset: ruleset %d rejected by IsRulesetVotable at execution", (int)rs);
+		return;
+	}
 
 	gi.cvar_forceset("g_ruleset", G_Fmt("{}", (int)rs).data());
 }
@@ -4198,6 +4214,11 @@ static void Cmd_ForceVote_f(gentity_t *ent) {
 	if (!deathmatch->integer)
 		return;
 
+	if (gi.argc() < 2) {
+		gi.LocClient_Print(ent, PRINT_HIGH, "Usage: {} <yes|no>\n", gi.argv(0));
+		return;
+	}
+
 	if (level.vote_state.state == VoteState::IDLE) {
 		gi.LocClient_Print(ent, PRINT_HIGH, "No vote in progress.\n");
 		return;
@@ -4290,8 +4311,7 @@ static void Cmd_SetMap_f(gentity_t *ent) {
 		return;
 	}
 	gi.LocBroadcast_Print(PRINT_HIGH, "[ADMIN]: Changing map to {}\n", gi.argv(1));
-	level.changemap = gi.argv(1);
-	ExitLevel();
+	gi.AddCommandString(G_Fmt("gamemap \"{}\"\n", gi.argv(1)).data());
 }
 
 extern void ClearWorldEntities();
@@ -4798,39 +4818,22 @@ static void Cmd_MyMap_f(gentity_t *ent) {
 	game.item_inhibit_am = 0;
 	game.item_inhibit_wp = 0;
 
-	//flags
-	// "pu", "pa", "ht", "ar", "am", "wp", "fd"
-	if (gi.argc() > 2) {
-		const char *s = nullptr;
-		bool add = false, subtract = false;
-
-		for (size_t i = 0; i < gi.argc(); i++) {
-			s = gi.argv(2 + i);
-			if (s[0] == '+') {
-				s++;
-				add = true;
-			} else if (s[0] == '-') {
-				s++;
-				subtract = true;
-			}
-
-			if (add || subtract) {
-				int num = add ? 1 : -1;
-				if (strcmp(s, "pu")) {
-					game.item_inhibit_pu = num;
-				} else if (strcmp(s, "pa")) {
-					game.item_inhibit_pa = num;
-				} else if (strcmp(s, "ht")) {
-					game.item_inhibit_ht = num;
-				} else if (strcmp(s, "ar")) {
-					game.item_inhibit_ar = num;
-				} else if (strcmp(s, "am")) {
-					game.item_inhibit_am = num;
-				} else if (strcmp(s, "wp")) {
-					game.item_inhibit_wp = num;
-				}
-			}
-		}
+	// flags: "+pu", "-pa", "+ht", "+ar", "+am", "+wp"
+	// argv indices: 0=cmd, 1=mapname, 2..argc-1=flags
+	for (int i = 2; i < gi.argc(); i++) {
+		const char *s = gi.argv(i);
+		if (!s || !s[0])
+			continue;
+		int num = 0;
+		if (s[0] == '+') { num = 1; s++; }
+		else if (s[0] == '-') { num = -1; s++; }
+		else continue;
+		if (!Q_strcasecmp(s, "pu"))      game.item_inhibit_pu = num;
+		else if (!Q_strcasecmp(s, "pa")) game.item_inhibit_pa = num;
+		else if (!Q_strcasecmp(s, "ht")) game.item_inhibit_ht = num;
+		else if (!Q_strcasecmp(s, "ar")) game.item_inhibit_ar = num;
+		else if (!Q_strcasecmp(s, "am")) game.item_inhibit_am = num;
+		else if (!Q_strcasecmp(s, "wp")) game.item_inhibit_wp = num;
 	}
 	
 	if (text.size())
