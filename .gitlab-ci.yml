@@ -7,8 +7,13 @@ stages:
   before_script:
     - |
       $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-      $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-      if (-not $msbuild) { Write-Error "MSBuild not found"; exit 1 }
+      $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+      if (-not $vsPath) { Write-Error "Visual Studio with C++ build tools not found"; exit 1 }
+      $vcvarsall = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+      if (-not (Test-Path $vcvarsall)) { Write-Error "vcvarsall.bat not found"; exit 1 }
+      $msbuild = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
+      if (-not (Test-Path $msbuild)) { Write-Error "MSBuild not found"; exit 1 }
+      Set-Item -Path Env:VCVARSALL -Value $vcvarsall
       Write-Host "MSBuild: $msbuild"
       Set-Item -Path Env:MSBUILD -Value $msbuild
 
@@ -16,27 +21,9 @@ build-release:
   extends: .windows_build
   stage: build
   script:
-    - '& $env:MSBUILD src\MuffMode.sln /p:Configuration=Release /p:Platform=x64 /m /v:minimal'
+    - 'cmd /c "\"%VCVARSALL%\" x64 && \"%MSBUILD%\" src\\MuffMode.sln /p:Configuration=Release /p:Platform=x64"'
   artifacts:
     name: "muffmode-release-${CI_COMMIT_SHORT_SHA}"
     paths:
       - game_x64.dll
     expire_in: 1 week
-
-build-debug:
-  extends: .windows_build
-  stage: build
-  script:
-    - '& $env:MSBUILD src\MuffMode.sln /p:Configuration=Debug /p:Platform=x64 /m /v:minimal'
-  artifacts:
-    name: "muffmode-debug-${CI_COMMIT_SHORT_SHA}"
-    paths:
-      - game_x64.dll
-    expire_in: 3 days
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-    - if: $CI_COMMIT_BRANCH
-      when: manual
-      allow_failure: true
