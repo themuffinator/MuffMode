@@ -383,7 +383,7 @@ public:
 	inline void Com_PrintFmt(std::format_string<Args...> format_str, Args &&... args)
 #else
 #define Com_PrintFmt(str, ...) \
-	Com_PrintFmt_(FMT_STRING(str), __VA_ARGS__)
+	Com_PrintFmt_(FMT_STRING(str), ##__VA_ARGS__)
 
 	template<typename S, typename... Args>
 	inline void Com_PrintFmt_(const S &format_str, Args &&... args)
@@ -399,7 +399,7 @@ public:
 	inline void Com_ErrorFmt(std::format_string<Args...> format_str, Args &&... args)
 #else
 #define Com_ErrorFmt(str, ...) \
-	Com_ErrorFmt_(FMT_STRING(str), __VA_ARGS__)
+	Com_ErrorFmt_(FMT_STRING(str), ##__VA_ARGS__)
 
 	template<typename S, typename... Args>
 	inline void Com_ErrorFmt_(const S &format_str, Args &&... args)
