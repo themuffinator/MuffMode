@@ -739,7 +739,7 @@ struct laser_pierce_t : pierce_args_t {
 	}
 };
 
-static THINK(target_laser_think) (gentity_t *self) -> void {
+THINK(target_laser_think) (gentity_t *self) -> void {
 	int32_t count;
 
 	if (self->spawnflags.has(SPAWNFLAG_LASER_ZAP))
